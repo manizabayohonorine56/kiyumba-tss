@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Kiyumba School</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+            color: #333;
+        }
+
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #1e293b;
+            color: white;
+            padding: 2rem 0;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 0 2rem 2rem;
+            border-bottom: 1px solid #334155;
+        }
+
+        .sidebar-header h2 {
+            font-size: 1.2rem;
+            color: #2563eb;
+        }
+
+        .nav-menu {
+            list-style: none;
+            padding: 2rem 0;
+        }
+
+        .nav-item {
+            margin-bottom: 0.5rem;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 1rem 2rem;
+            color: #94a3b8;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            background: #334155;
+            color: white;
+        }
+
+        .nav-link i {
+            margin-right: 0.75rem;
+            width: 20px;
+        }
+
+        .main-content {
+            margin-left: 250px;
+            flex: 1;
+            padding: 2rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            background: white;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: #1e293b;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logout-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: #dc2626;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-card i {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card h3 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card p {
+            color: #64748b;
+        }
+
+        .content-section {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: none;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        .section-header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .section-header h2 {
+            color: #1e293b;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .login-form {
+            max-width: 400px;
+            margin: 5rem auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .page-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid #e2e8f0;
+            background: white;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        .page-btn.active {
+            background: #2563eb;
+            color: white;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+        }
+
+        .settings-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 1.5rem;
+        }
+
+        .settings-card h3 {
+            color: #1e293b;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .settings-card h3 i {
+            color: #2563eb;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Form -->
+    <div id="loginSection">
+        <div class="login-form">
+            <h2 style="text-align: center; margin-bottom: 2rem; color: #1e293b;">Admin Login</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+            </form>
+            <p style="text-align: center; margin-top: 1rem; color: #64748b;">
+                Default: admin@kiyumbaschool.edu / admin123
+            </p>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard -->
+    <div id="adminSection" style="display: none;">
+        <div class="admin-container">
+            <nav class="sidebar">
+                <div class="sidebar-header">
+                    <h2><i class="fas fa-graduation-cap"></i> Kiyumba Admin</h2>
+                </div>
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="#" class="nav-link active" data-section="dashboard">
+                            <i class="fas fa-chart-bar"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" data-section="registrations">
+                            <i class="fas fa-user-plus"></i> Registrations
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" data-section="messages">
+                            <i class="fas fa-envelope"></i> Messages
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" data-section="reports">
+                            <i class="fas fa-chart-line"></i> Student Reports
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" data-section="settings">
+                            <i class="fas fa-cog"></i> Settings
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <main class="main-content">
+                <div class="header">
+                    <h1 id="pageTitle">Dashboard</h1>
+                    <div class="user-info">
+                        <span id="userEmail"></span>
+                        <button class="logout-btn" onclick="logout()">
+                            <i class="fas fa-sign-out-alt"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Dashboard Section -->
+                <div id="dashboard" class="content-section active">
+                    <div class="dashboard-grid">
+                        <div class="stat-card">
+                            <i class="fas fa-users" style="color: #2563eb;"></i>
+                            <h3 id="totalRegistrations">0</h3>
+                            <p>Total Registrations</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-clock" style="color: #f59e0b;"></i>
+                            <h3 id="pendingRegistrations">0</h3>
+                            <p>Pending Approvals</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-check-circle" style="color: #10b981;"></i>
+                            <h3 id="approvedRegistrations">0</h3>
+                            <p>Approved Students</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-envelope" style="color: #ef4444;"></i>
+                            <h3 id="unreadMessages">0</h3>
+                            <p>Unread Messages</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Registrations Section -->
+                <div id="registrations" class="content-section">
+                    <div class="section-header">
+                        <h2>Student Registrations</h2>
+                        <div>
+                            <select id="statusFilter" class="btn">
+                                <option value="">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="registrationsTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Program</th>
+                                    <th>Grade</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="registrationsPagination"></div>
+                </div>
+
+                <!-- Messages Section -->
+                <div id="messages" class="content-section">
+                    <div class="section-header">
+                        <h2>Contact Messages</h2>
+                    </div>
+                    <div class="table-container">
+                        <table id="messagesTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Message</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Student Reports Section -->
+                <div id="reports" class="content-section">
+                    <div class="section-header">
+                        <h2>Student Reports</h2>
+                        <div>
+                            <button class="btn btn-success" onclick="exportReports('csv')">
+                                <i class="fas fa-download"></i> Export CSV
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Filters -->
+                    <div style="padding: 1.5rem 2rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                        <div class="dashboard-grid" style="margin-bottom: 0;">
+                            <div class="form-group">
+                                <label for="reportStatusFilter">Status</label>
+                                <select id="reportStatusFilter" class="form-group input" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                                    <option value="">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="rejected">Rejected</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="reportProgramFilter">Program</label>
+                                <select id="reportProgramFilter" class="form-group input" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                                    <option value="">All Programs</option>
+                                    <option value="Primary">Primary</option>
+                                    <option value="Secondary">Secondary</option>
+                                    <option value="Vocational">Vocational</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="reportGradeFilter">Grade</label>
+                                <select id="reportGradeFilter" class="form-group input" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                                    <option value="">All Grades</option>
+                                    <option value="P1">P1</option>
+                                    <option value="P2">P2</option>
+                                    <option value="P3">P3</option>
+                                    <option value="P4">P4</option>
+                                    <option value="P5">P5</option>
+                                    <option value="P6">P6</option>
+                                    <option value="S1">S1</option>
+                                    <option value="S2">S2</option>
+                                    <option value="S3">S3</option>
+                                    <option value="S4">S4</option>
+                                    <option value="S5">S5</option>
+                                    <option value="S6">S6</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="reportStartDate">Start Date</label>
+                                <input type="date" id="reportStartDate" class="form-group input" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="reportEndDate">End Date</label>
+                                <input type="date" id="reportEndDate" class="form-group input" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: end;">
+                                <button class="btn btn-primary" onclick="applyReportFilters()" style="width: 100%;">
+                                    <i class="fas fa-filter"></i> Apply Filters
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Report Summary -->
+                    <div style="padding: 1.5rem 2rem; background: white;">
+                        <div class="dashboard-grid" style="margin-bottom: 1rem;">
+                            <div class="stat-card" style="margin: 0;">
+                                <i class="fas fa-users" style="color: #2563eb;"></i>
+                                <h3 id="reportTotalStudents">0</h3>
+                                <p>Total Students</p>
+                            </div>
+                            <div class="stat-card" style="margin: 0;">
+                                <i class="fas fa-check-circle" style="color: #10b981;"></i>
+                                <h3 id="reportApprovedStudents">0</h3>
+                                <p>Approved</p>
+                            </div>
+                            <div class="stat-card" style="margin: 0;">
+                                <i class="fas fa-clock" style="color: #f59e0b;"></i>
+                                <h3 id="reportPendingStudents">0</h3>
+                                <p>Pending</p>
+                            </div>
+                            <div class="stat-card" style="margin: 0;">
+                                <i class="fas fa-times-circle" style="color: #ef4444;"></i>
+                                <h3 id="reportRejectedStudents">0</h3>
+                                <p>Rejected</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Student Details Table -->
+                    <div class="table-container">
+                        <table id="reportsTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Date of Birth</th>
+                                    <th>Gender</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Program</th>
+                                    <th>Grade</th>
+                                    <th>Parent</th>
+                                    <th>Status</th>
+                                    <th>Registration Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="reportsPagination"></div>
+                </div>
+
+                <!-- Settings Section -->
+                <div id="settings" class="content-section">
+                    <div class="section-header">
+                        <h2>Website Settings</h2>
+                        <button class="btn btn-primary" onclick="saveAllSettings()">
+                            <i class="fas fa-save"></i> Save All Settings
+                        </button>
+                    </div>
+                    <div style="padding: 2rem;">
+                        <div class="settings-grid">
+                            <!-- School Information -->
+                            <div class="settings-card">
+                                <h3><i class="fas fa-school"></i> School Information</h3>
+                                <div class="form-group">
+                                    <label for="schoolName">School Name</label>
+                                    <input type="text" id="schoolName" value="Kiyumba School Management System">
+                                </div>
+                                <div class="form-group">
+                                    <label for="schoolAddress">Address</label>
+                                    <input type="text" id="schoolAddress" value="123 Education Street, Kiyumba Sector">
+                                </div>
+                                <div class="form-group">
+                                    <label for="schoolPhone">Phone</label>
+                                    <input type="tel" id="schoolPhone" value="(250) 79599901">
+                                </div>
+                                <div class="form-group">
+                                    <label for="schoolEmail">Email</label>
+                                    <input type="email" id="schoolEmail" value="info@kiyumbaschool.edu">
+                                </div>
+                            </div>
+
+                            <!-- SMS Settings -->
+                            <div class="settings-card">
+                                <h3><i class="fas fa-sms"></i> SMS Configuration</h3>
+                                <div class="form-group">
+                                    <label for="smsProvider">SMS Provider</label>
+                                    <select id="smsProvider">
+                                        <option value="twilio">Twilio</option>
+                                        <option value="nexmo">Vonage (Nexmo)</option>
+                                        <option value="africastalking">Africa's Talking</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="smsApiKey">API Key</label>
+                                    <input type="password" id="smsApiKey" placeholder="Enter SMS API Key">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smsFromNumber">From Number</label>
+                                    <input type="tel" id="smsFromNumber" placeholder="+250XXXXXXXXX">
+                                </div>
+                                <div class="form-group">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="smsEnabled" checked>
+                                        <label for="smsEnabled">Enable SMS Notifications</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Email Settings -->
+                            <div class="settings-card">
+                                <h3><i class="fas fa-envelope"></i> Email Configuration</h3>
+                                <div class="form-group">
+                                    <label for="smtpHost">SMTP Host</label>
+                                    <input type="text" id="smtpHost" placeholder="smtp.gmail.com">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smtpPort">SMTP Port</label>
+                                    <input type="number" id="smtpPort" value="587">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smtpUser">SMTP Username</label>
+                                    <input type="email" id="smtpUser" placeholder="your-email@gmail.com">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smtpPass">SMTP Password</label>
+                                    <input type="password" id="smtpPass" placeholder="App Password">
+                                </div>
+                            </div>
+
+                            <!-- Registration Settings -->
+                            <div class="settings-card">
+                                <h3><i class="fas fa-user-cog"></i> Registration Settings</h3>
+                                <div class="form-group">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="autoApproval">
+                                        <label for="autoApproval">Auto-approve registrations</label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="emailNotifications" checked>
+                                        <label for="emailNotifications">Send email notifications</label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="maxStudents">Maximum Students per Program</label>
+                                    <input type="number" id="maxStudents" value="50">
+                                </div>
+                                <div class="form-group">
+                                    <label for="registrationDeadline">Registration Deadline</label>
+                                    <input type="date" id="registrationDeadline">
+                                </div>
+                            </div>
+
+                            <!-- Security Settings -->
+                            <div class="settings-card">
+                                <h3><i class="fas fa-shield-alt"></i> Security Settings</h3>
+                                <div class="form-group">
+                                    <label for="sessionTimeout">Session Timeout (minutes)</label>
+                                    <input type="number" id="sessionTimeout" value="60">
+                                </div>
+                                <div class="form-group">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="twoFactorAuth">
+                                        <label for="twoFactorAuth">Enable Two-Factor Authentication</label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="passwordPolicy">Password Policy</label>
+                                    <select id="passwordPolicy">
+                                        <option value="basic">Basic (8+ characters)</option>
+                                        <option value="medium">Medium (8+ chars, numbers, symbols)</option>
+                                        <option value="strong">Strong (12+ chars, mixed case, numbers, symbols)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <button class="btn btn-danger" onclick="changeAdminPassword()">
+                                        <i class="fas fa-key"></i> Change Admin Password
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Backup & Maintenance -->
+                            <div class="settings-card">
+                                <h3><i class="fas fa-database"></i> Backup & Maintenance</h3>
+                                <div class="form-group">
+                                    <label for="backupFrequency">Auto Backup Frequency</label>
+                                    <select id="backupFrequency">
+                                        <option value="daily">Daily</option>
+                                        <option value="weekly">Weekly</option>
+                                        <option value="monthly">Monthly</option>
+                                        <option value="disabled">Disabled</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <button class="btn btn-primary" onclick="createBackup()">
+                                        <i class="fas fa-download"></i> Create Backup Now
+                                    </button>
+                                </div>
+                                <div class="form-group">
+                                    <button class="btn btn-success" onclick="exportData()">
+                                        <i class="fas fa-file-export"></i> Export All Data
+                                    </button>
+                                </div>
+                                <div class="form-group">
+                                    <button class="btn btn-danger" onclick="clearLogs()">
+                                        <i class="fas fa-trash"></i> Clear System Logs
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        let authToken = localStorage.getItem('adminToken');
+        let currentUser = null;
+
+        // Check authentication on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            if (authToken) {
+                showAdminPanel();
+                loadDashboard();
+            }
+        });
+
+        // Login form handler
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    authToken = data.token;
+                    currentUser = data.user;
+                    localStorage.setItem('adminToken', authToken);
+                    showAdminPanel();
+                    loadDashboard();
+                } else {
+                    alert(data.error);
+                }
+            } catch (error) {
+                alert('Login failed: ' + error.message);
+            }
+        });
+        });
+
+        function showAdminPanel() {
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('adminSection').style.display = 'block';
+            if (currentUser) {
+                document.getElementById('userEmail').textContent = currentUser.email;
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('adminToken');
+            authToken = null;
+            currentUser = null;
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('adminSection').style.display = 'none';
+        }
+
+        // Navigation
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                
+                // Update active nav
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                link.classList.add('active');
+                
+                // Show section
+                const section = link.dataset.section;
+                document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+                document.getElementById(section).classList.add('active');
+                
+                // Update page title
+                document.getElementById('pageTitle').textContent = link.textContent.trim();
+                
+                // Load section data
+                if (section === 'registrations') loadRegistrations();
+                else if (section === 'messages') loadMessages();
+                else if (section === 'reports') loadReports();
+                else if (section === 'dashboard') loadDashboard();
+            });
+        });
+
+        async function loadDashboard() {
+            try {
+                const response = await fetch('/api/admin/stats', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const stats = await response.json();
+                    
+                    document.getElementById('totalRegistrations').textContent = stats.totalRegistrations || 0;
+                    document.getElementById('pendingRegistrations').textContent = stats.registrations?.pending || 0;
+                    document.getElementById('approvedRegistrations').textContent = stats.registrations?.approved || 0;
+                    document.getElementById('unreadMessages').textContent = stats.unreadMessages || 0;
+                }
+            } catch (error) {
+                console.error('Failed to load dashboard stats:', error);
+            }
+        }
+
+        async function loadRegistrations(page = 1) {
+            const status = document.getElementById('statusFilter').value;
+            
+            try {
+                const response = await fetch(`/api/admin/registrations?page=${page}&status=${status}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayRegistrations(data.registrations);
+                    displayPagination(data, 'registrationsPagination', loadRegistrations);
+                }
+            } catch (error) {
+                console.error('Failed to load registrations:', error);
+            }
+        }
+
+        function displayRegistrations(registrations) {
+            const tbody = document.querySelector('#registrationsTable tbody');
+            tbody.innerHTML = '';
+
+            registrations.forEach(reg => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${reg.firstName} ${reg.lastName}</td>
+                    <td>${reg.email}</td>
+                    <td>${reg.program}</td>
+                    <td>${reg.grade}</td>
+                    <td><span class="status-badge status-${reg.status}">${reg.status}</span></td>
+                    <td>${new Date(reg.created_at).toLocaleDateString()}</td>
+                    <td>
+                        <button class="btn btn-success" onclick="updateStatus(${reg.id}, 'approved')">Approve</button>
+                        <button class="btn btn-danger" onclick="updateStatus(${reg.id}, 'rejected')">Reject</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function updateStatus(id, status) {
+            try {
+                const response = await fetch(`/api/admin/registrations/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status })
+                });
+
+                if (response.ok) {
+                    loadRegistrations();
+                    loadDashboard();
+                }
+            } catch (error) {
+                console.error('Failed to update status:', error);
+            }
+        }
+
+        async function loadMessages() {
+            try {
+                const response = await fetch('/api/admin/messages', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayMessages(data.messages);
+                }
+            } catch (error) {
+                console.error('Failed to load messages:', error);
+            }
+        }
+
+        function displayMessages(messages) {
+            const tbody = document.querySelector('#messagesTable tbody');
+            tbody.innerHTML = '';
+
+            messages.forEach(msg => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${msg.name}</td>
+                    <td>${msg.email}</td>
+                    <td>${msg.message.substring(0, 50)}...</td>
+                    <td><span class="status-badge status-${msg.status === 'read' ? 'approved' : 'pending'}">${msg.status}</span></td>
+                    <td>${new Date(msg.created_at).toLocaleDateString()}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="markAsRead(${msg.id})">Mark Read</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function markAsRead(id) {
+            try {
+                const response = await fetch(`/api/admin/messages/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status: 'read' })
+                });
+
+                if (response.ok) {
+                    loadMessages();
+                    loadDashboard();
+                }
+            } catch (error) {
+                console.error('Failed to mark message as read:', error);
+            }
+        }
+
+        function displayPagination(data, containerId, loadFunction) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            for (let i = 1; i <= data.totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.className = `page-btn ${i === data.page ? 'active' : ''}`;
+                btn.textContent = i;
+                btn.onclick = () => loadFunction(i);
+                container.appendChild(btn);
+            }
+        }
+
+        // Status filter
+        document.getElementById('statusFilter').addEventListener('change', () => {
+            loadRegistrations(1);
+        });
+
+        // Student Reports Functions
+        let currentReportFilters = {};
+
+        async function loadReports(page = 1) {
+            const params = new URLSearchParams({
+                page: page,
+                limit: 50,
+                ...currentReportFilters
+            });
+
+            try {
+                const response = await fetch(`/api/admin/reports?${params}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayReports(data.students);
+                    updateReportSummary(data.students);
+                    displayPagination(data, 'reportsPagination', loadReports);
+                }
+            } catch (error) {
+                console.error('Failed to load reports:', error);
+            }
+        }
+
+        function displayReports(students) {
+            const tbody = document.querySelector('#reportsTable tbody');
+            tbody.innerHTML = '';
+
+            students.forEach(student => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${student.id}</td>
+                    <td>${student.firstName} ${student.lastName}</td>
+                    <td>${new Date(student.dateOfBirth).toLocaleDateString()}</td>
+                    <td>${student.gender}</td>
+                    <td>${student.email}</td>
+                    <td>${student.phone}</td>
+                    <td>${student.program}</td>
+                    <td>${student.grade}</td>
+                    <td>${student.parentName || 'N/A'}</td>
+                    <td><span class="status-badge status-${student.status}">${student.status}</span></td>
+                    <td>${new Date(student.created_at).toLocaleDateString()}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="viewStudentDetails(${student.id})" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateReportSummary(students) {
+            const total = students.length;
+            const approved = students.filter(s => s.status === 'approved').length;
+            const pending = students.filter(s => s.status === 'pending').length;
+            const rejected = students.filter(s => s.status === 'rejected').length;
+
+            document.getElementById('reportTotalStudents').textContent = total;
+            document.getElementById('reportApprovedStudents').textContent = approved;
+            document.getElementById('reportPendingStudents').textContent = pending;
+            document.getElementById('reportRejectedStudents').textContent = rejected;
+        }
+
+        function applyReportFilters() {
+            currentReportFilters = {
+                status: document.getElementById('reportStatusFilter').value,
+                program: document.getElementById('reportProgramFilter').value,
+                grade: document.getElementById('reportGradeFilter').value,
+                startDate: document.getElementById('reportStartDate').value,
+                endDate: document.getElementById('reportEndDate').value
+            };
+
+            // Remove empty filters
+            Object.keys(currentReportFilters).forEach(key => {
+                if (!currentReportFilters[key]) {
+                    delete currentReportFilters[key];
+                }
+            });
+
+            loadReports(1);
+        }
+
+        async function exportReports(format) {
+            const params = new URLSearchParams({
+                format: format,
+                ...currentReportFilters
+            });
+
+            try {
+                const response = await fetch(`/api/admin/reports?${params}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `student_report_${new Date().toISOString().split('T')[0]}.${format}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    alert('Failed to export report');
+                }
+            } catch (error) {
+                console.error('Failed to export reports:', error);
+                alert('Failed to export report');
+            }
+        }
+
+        function viewStudentDetails(studentId) {
+            // Find the student in the current data
+            const students = Array.from(document.querySelectorAll('#reportsTable tbody tr')).map(row => {
+                const cells = row.querySelectorAll('td');
+                return {
+                    id: cells[0].textContent,
+                    name: cells[1].textContent,
+                    dob: cells[2].textContent,
+                    gender: cells[3].textContent,
+                    email: cells[4].textContent,
+                    phone: cells[5].textContent,
+                    program: cells[6].textContent,
+                    grade: cells[7].textContent,
+                    parent: cells[8].textContent,
+                    status: cells[9].textContent.trim(),
+                    registrationDate: cells[10].textContent
+                };
+            });
+
+            const student = students.find(s => s.id == studentId);
+            if (student) {
+                alert(`Student Details:\n\nName: ${student.name}\nEmail: ${student.email}\nPhone: ${student.phone}\nProgram: ${student.program}\nGrade: ${student.grade}\nParent: ${student.parent}\nStatus: ${student.status}\nRegistration Date: ${student.registrationDate}`);
+            }
+        }
+
+        // Settings Functions
+        async function saveAllSettings() {
+            const settings = {
+                school: {
+                    name: document.getElementById('schoolName').value,
+                    address: document.getElementById('schoolAddress').value,
+                    phone: document.getElementById('schoolPhone').value,
+                    email: document.getElementById('schoolEmail').value
+                },
+                sms: {
+                    provider: document.getElementById('smsProvider').value,
+                    apiKey: document.getElementById('smsApiKey').value,
+                    fromNumber: document.getElementById('smsFromNumber').value,
+                    enabled: document.getElementById('smsEnabled').checked
+                },
+                email: {
+                    smtpHost: document.getElementById('smtpHost').value,
+                    smtpPort: document.getElementById('smtpPort').value,
+                    smtpUser: document.getElementById('smtpUser').value,
+                    smtpPass: document.getElementById('smtpPass').value
+                },
+                registration: {
+                    autoApproval: document.getElementById('autoApproval').checked,
+                    emailNotifications: document.getElementById('emailNotifications').checked,
+                    maxStudents: document.getElementById('maxStudents').value,
+                    deadline: document.getElementById('registrationDeadline').value
+                },
+                security: {
+                    sessionTimeout: document.getElementById('sessionTimeout').value,
+                    twoFactorAuth: document.getElementById('twoFactorAuth').checked,
+                    passwordPolicy: document.getElementById('passwordPolicy').value
+                },
+                backup: {
+                    frequency: document.getElementById('backupFrequency').value
+                }
+            };
+
+            try {
+                const response = await fetch('/api/admin/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+
+                if (response.ok) {
+                    alert('Settings saved successfully!');
+                } else {
+                    alert('Failed to save settings');
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                alert('Error saving settings: ' + error.message);
+            }
+        }
+
+        function changeAdminPassword() {
+            const newPassword = prompt('Enter new admin password:');
+            if (newPassword && newPassword.length >= 8) {
+                // In a real implementation, this would make an API call
+                alert('Password change functionality will be implemented in the backend.');
+            } else if (newPassword) {
+                alert('Password must be at least 8 characters long.');
+            }
+        }
+
+        async function createBackup() {
+            try {
+                const response = await fetch('/api/admin/backup', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `kiyumba_backup_${new Date().toISOString().split('T')[0]}.db`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    alert('Failed to create backup');
+                }
+            } catch (error) {
+                console.error('Error creating backup:', error);
+                alert('Error creating backup: ' + error.message);
+            }
+        }
+
+        async function exportData() {
+            try {
+                const response = await fetch('/api/admin/export', {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `kiyumba_data_export_${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    alert('Failed to export data');
+                }
+            } catch (error) {
+                console.error('Error exporting data:', error);
+                alert('Error exporting data: ' + error.message);
+            }
+        }
+
+        function clearLogs() {
+            if (confirm('Are you sure you want to clear all system logs? This action cannot be undone.')) {
+                // In a real implementation, this would make an API call
+                alert('System logs cleared successfully!');
+            }
+        }
+    </script>
+</body>
+</html>

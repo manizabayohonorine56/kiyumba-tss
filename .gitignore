@@ -1,0 +1,4 @@
+﻿node_modules/
+kiyumba_school.db
+.env
+package-lock.json

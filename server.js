@@ -1,0 +1,770 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'kiyumba_school_secret_key_2024';
+
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: false // Disable for development
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use('/api/', limiter);
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname)));
+
+// Database connection
+const db = new sqlite3.Database('./kiyumba_school.db', (err) => {
+    if (err) {
+        console.error('Error opening database:', err);
+    } else {
+        console.log('Connected to SQLite database');
+        initializeDatabase();
+    }
+});
+
+// Initialize database tables
+function initializeDatabase() {
+    // Users table (for admin authentication)
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'admin',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // Registrations table
+    db.run(`CREATE TABLE IF NOT EXISTS registrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firstName TEXT NOT NULL,
+        lastName TEXT NOT NULL,
+        dateOfBirth DATE NOT NULL,
+        gender TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        phone TEXT NOT NULL,
+        address TEXT NOT NULL,
+        program TEXT NOT NULL,
+        grade TEXT NOT NULL,
+        parentName TEXT,
+        parentPhone TEXT,
+        previousSchool TEXT,
+        medicalInfo TEXT,
+        newsletter BOOLEAN DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // Contact messages table
+    db.run(`CREATE TABLE IF NOT EXISTS contact_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT,
+        message TEXT NOT NULL,
+        status TEXT DEFAULT 'unread',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // SMS messages table
+    db.run(`CREATE TABLE IF NOT EXISTS sms_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        message TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // Website settings table
+    db.run(`CREATE TABLE IF NOT EXISTS website_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        setting_key TEXT UNIQUE NOT NULL,
+        setting_value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // Create default admin user
+    createDefaultAdmin();
+}
+
+// Create default admin user
+function createDefaultAdmin() {
+    const defaultPassword = 'admin123';
+    bcrypt.hash(defaultPassword, 10, (err, hash) => {
+        if (err) {
+            console.error('Error hashing password:', err);
+            return;
+        }
+        
+        db.run(`INSERT OR IGNORE INTO users (username, email, password, role) 
+                VALUES (?, ?, ?, ?)`, 
+                ['admin', 'admin@kiyumbaschool.edu', hash, 'admin'], 
+                function(err) {
+                    if (err) {
+                        console.error('Error creating admin user:', err);
+                    } else if (this.changes > 0) {
+                        console.log('Default admin user created: admin@kiyumbaschool.edu / admin123');
+                    }
+                });
+    });
+}
+
+// Authentication middleware
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: 'Access token required' });
+    }
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) {
+            return res.status(403).json({ error: 'Invalid token' });
+        }
+        req.user = user;
+        next();
+    });
+}
+
+// Routes
+
+// Serve static files
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+// API Routes
+
+// Admin login
+app.post('/api/admin/login', (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password required' });
+    }
+
+    db.get('SELECT * FROM users WHERE email = ?', [email], (err, user) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        bcrypt.compare(password, user.password, (err, result) => {
+            if (err) {
+                return res.status(500).json({ error: 'Authentication error' });
+            }
+
+            if (!result) {
+                return res.status(401).json({ error: 'Invalid credentials' });
+            }
+
+            const token = jwt.sign(
+                { id: user.id, email: user.email, role: user.role },
+                JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+
+            res.json({
+                message: 'Login successful',
+                token,
+                user: {
+                    id: user.id,
+                    username: user.username,
+                    email: user.email,
+                    role: user.role
+                }
+            });
+        });
+    });
+});
+
+// Student registration
+app.post('/api/register', (req, res) => {
+    const {
+        firstName, lastName, dateOfBirth, gender, email, phone, address,
+        program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter
+    } = req.body;
+
+    // Validation
+    if (!firstName || !lastName || !dateOfBirth || !gender || !email || !phone || !address || !program || !grade) {
+        return res.status(400).json({ error: 'All required fields must be filled' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    db.run(`INSERT INTO registrations (
+        firstName, lastName, dateOfBirth, gender, email, phone, address,
+        program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [firstName, lastName, dateOfBirth, gender, email, phone, address,
+     program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter ? 1 : 0],
+    function(err) {
+        if (err) {
+            if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+                return res.status(400).json({ error: 'Email already registered' });
+            }
+            return res.status(500).json({ error: 'Registration failed' });
+        }
+
+        res.json({
+            message: 'Registration successful',
+            registrationId: this.lastID
+        });
+    });
+});
+
+// Contact form endpoint
+app.post('/api/contact', async (req, res) => {
+    try {
+        const { name, email, phone, message } = req.body;
+        
+        if (!name || !email || !message) {
+            return res.status(400).json({ error: 'Name, email, and message are required' });
+        }
+
+        const stmt = db.prepare(`
+            INSERT INTO contact_messages (name, email, phone, message, status, created_at)
+            VALUES (?, ?, ?, ?, 'unread', datetime('now'))
+        `);
+        
+        stmt.run([name, email, phone || null, message], function(err) {
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Failed to save message' });
+            }
+            
+            res.json({ 
+                success: true, 
+                message: 'Message sent successfully',
+                id: this.lastID 
+            });
+        });
+        
+        stmt.finalize();
+    } catch (error) {
+        console.error('Contact form error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// SMS sending endpoint
+app.post('/api/send-sms', async (req, res) => {
+    try {
+        const { name, phone, message } = req.body;
+        
+        if (!name || !phone || !message) {
+            return res.status(400).json({ error: 'Name, phone, and message are required' });
+        }
+
+        // Validate phone number format
+        const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+        if (!phoneRegex.test(phone)) {
+            return res.status(400).json({ error: 'Invalid phone number format' });
+        }
+
+        // Store SMS request in database
+        const stmt = db.prepare(`
+            INSERT INTO sms_messages (name, phone, message, status, created_at)
+            VALUES (?, ?, ?, 'pending', datetime('now'))
+        `);
+        
+        stmt.run([name, phone, message], function(err) {
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Failed to save SMS request' });
+            }
+            
+            // In a real implementation, you would integrate with SMS providers like:
+            // - Twilio: https://www.twilio.com/
+            // - Africa's Talking: https://africastalking.com/
+            // - Vonage (Nexmo): https://www.vonage.com/
+            
+            // For now, we'll simulate SMS sending
+            console.log(`SMS would be sent to ${phone}: ${message}`);
+            
+            res.json({ 
+                success: true, 
+                message: 'SMS request received and will be processed',
+                id: this.lastID 
+            });
+        });
+        
+        stmt.finalize();
+    } catch (error) {
+        console.error('SMS error:', error);
+        res.status(500).json({ error: 'Failed to process SMS request' });
+    }
+});
+
+// Admin routes (protected)
+
+// Get all registrations
+app.get('/api/admin/registrations', authenticateToken, (req, res) => {
+    const { status, program, page = 1, limit = 10 } = req.query;
+    let query = 'SELECT * FROM registrations WHERE 1=1';
+    let params = [];
+
+    if (status) {
+        query += ' AND status = ?';
+        params.push(status);
+    }
+
+    if (program) {
+        query += ' AND program = ?';
+        params.push(program);
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        // Get total count
+        let countQuery = 'SELECT COUNT(*) as total FROM registrations WHERE 1=1';
+        let countParams = [];
+
+        if (status) {
+            countQuery += ' AND status = ?';
+            countParams.push(status);
+        }
+
+        if (program) {
+            countQuery += ' AND program = ?';
+            countParams.push(program);
+        }
+
+        db.get(countQuery, countParams, (err, countResult) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error' });
+            }
+
+            res.json({
+                registrations: rows,
+                total: countResult.total,
+                page: parseInt(page),
+                totalPages: Math.ceil(countResult.total / parseInt(limit))
+            });
+        });
+    });
+});
+
+// Update registration status
+app.put('/api/admin/registrations/:id', authenticateToken, (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    db.run('UPDATE registrations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [status, id], function(err) {
+        if (err) {
+            return res.status(500).json({ error: 'Update failed' });
+        }
+
+        if (this.changes === 0) {
+            return res.status(404).json({ error: 'Registration not found' });
+        }
+
+        res.json({ message: 'Registration updated successfully' });
+    });
+});
+
+// Delete registration
+app.delete('/api/admin/registrations/:id', authenticateToken, (req, res) => {
+    const { id } = req.params;
+
+    db.run('DELETE FROM registrations WHERE id = ?', [id], function(err) {
+        if (err) {
+            return res.status(500).json({ error: 'Delete failed' });
+        }
+
+        if (this.changes === 0) {
+            return res.status(404).json({ error: 'Registration not found' });
+        }
+
+        res.json({ message: 'Registration deleted successfully' });
+    });
+});
+
+// Get contact messages
+app.get('/api/admin/messages', authenticateToken, (req, res) => {
+    const { status = 'all', page = 1, limit = 10 } = req.query;
+    let query = 'SELECT * FROM contact_messages';
+    let params = [];
+
+    if (status !== 'all') {
+        query += ' WHERE status = ?';
+        params.push(status);
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        res.json({ messages: rows });
+    });
+});
+
+// Mark message as read
+app.put('/api/admin/messages/:id', authenticateToken, (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    db.run('UPDATE contact_messages SET status = ? WHERE id = ?',
+    [status, id], function(err) {
+        if (err) {
+            return res.status(500).json({ error: 'Update failed' });
+        }
+
+        res.json({ message: 'Message updated successfully' });
+    });
+});
+
+// Student reports endpoint
+app.get('/api/admin/reports', authenticateToken, (req, res) => {
+    const { 
+        status, 
+        program, 
+        grade, 
+        startDate, 
+        endDate, 
+        format = 'json',
+        page = 1, 
+        limit = 50 
+    } = req.query;
+
+    let query = `SELECT 
+        id, firstName, lastName, dateOfBirth, gender, email, phone, address,
+        program, grade, parentName, parentPhone, previousSchool, medicalInfo,
+        newsletter, status, created_at, updated_at
+        FROM registrations WHERE 1=1`;
+    let params = [];
+
+    // Apply filters
+    if (status) {
+        query += ' AND status = ?';
+        params.push(status);
+    }
+
+    if (program) {
+        query += ' AND program = ?';
+        params.push(program);
+    }
+
+    if (grade) {
+        query += ' AND grade = ?';
+        params.push(grade);
+    }
+
+    if (startDate) {
+        query += ' AND DATE(created_at) >= ?';
+        params.push(startDate);
+    }
+
+    if (endDate) {
+        query += ' AND DATE(created_at) <= ?';
+        params.push(endDate);
+    }
+
+    // Add ordering and pagination for JSON format
+    if (format === 'json') {
+        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+    } else {
+        query += ' ORDER BY created_at DESC';
+    }
+
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (format === 'csv') {
+            // Generate CSV
+            const csv = generateCSV(rows);
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename="student_report.csv"');
+            res.send(csv);
+        } else {
+            // Get total count for pagination
+            let countQuery = 'SELECT COUNT(*) as total FROM registrations WHERE 1=1';
+            let countParams = [];
+
+            if (status) {
+                countQuery += ' AND status = ?';
+                countParams.push(status);
+            }
+            if (program) {
+                countQuery += ' AND program = ?';
+                countParams.push(program);
+            }
+            if (grade) {
+                countQuery += ' AND grade = ?';
+                countParams.push(grade);
+            }
+            if (startDate) {
+                countQuery += ' AND DATE(created_at) >= ?';
+                countParams.push(startDate);
+            }
+            if (endDate) {
+                countQuery += ' AND DATE(created_at) <= ?';
+                countParams.push(endDate);
+            }
+
+            db.get(countQuery, countParams, (err, countResult) => {
+                if (err) {
+                    return res.status(500).json({ error: 'Database error' });
+                }
+
+                res.json({
+                    students: rows,
+                    total: countResult.total,
+                    page: parseInt(page),
+                    totalPages: Math.ceil(countResult.total / parseInt(limit)),
+                    filters: { status, program, grade, startDate, endDate }
+                });
+            });
+        }
+    });
+});
+
+// Helper function to generate CSV
+function generateCSV(data) {
+    if (data.length === 0) return '';
+    
+    const headers = [
+        'ID', 'First Name', 'Last Name', 'Date of Birth', 'Gender', 'Email', 'Phone',
+        'Address', 'Program', 'Grade', 'Parent Name', 'Parent Phone', 'Previous School',
+        'Medical Info', 'Newsletter', 'Status', 'Registration Date', 'Last Updated'
+    ];
+    
+    const csvRows = [headers.join(',')];
+    
+    data.forEach(row => {
+        const values = [
+            row.id,
+            `"${row.firstName}"`,
+            `"${row.lastName}"`,
+            row.dateOfBirth,
+            row.gender,
+            row.email,
+            row.phone,
+            `"${row.address}"`,
+            row.program,
+            row.grade,
+            `"${row.parentName || ''}"`,
+            row.parentPhone || '',
+            `"${row.previousSchool || ''}"`,
+            `"${row.medicalInfo || ''}"`,
+            row.newsletter ? 'Yes' : 'No',
+            row.status,
+            new Date(row.created_at).toLocaleDateString(),
+            new Date(row.updated_at).toLocaleDateString()
+        ];
+        csvRows.push(values.join(','));
+    });
+    
+    return csvRows.join('\n');
+}
+
+// Dashboard statistics
+app.get('/api/admin/stats', authenticateToken, (req, res) => {
+    const stats = {};
+
+    // Get registration counts by status
+    db.all(`SELECT status, COUNT(*) as count FROM registrations GROUP BY status`, (err, registrationStats) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        stats.registrations = registrationStats.reduce((acc, stat) => {
+            acc[stat.status] = stat.count;
+            return acc;
+        }, {});
+
+        // Get total registrations
+        db.get('SELECT COUNT(*) as total FROM registrations', (err, totalReg) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error' });
+            }
+
+            stats.totalRegistrations = totalReg.total;
+
+            // Get unread messages count
+            db.get('SELECT COUNT(*) as count FROM contact_messages WHERE status = "unread"', (err, unreadMsg) => {
+                if (err) {
+                    return res.status(500).json({ error: 'Database error' });
+                }
+
+                stats.unreadMessages = unreadMsg.count;
+
+                // Get registrations by program
+                db.all(`SELECT program, COUNT(*) as count FROM registrations GROUP BY program`, (err, programStats) => {
+                    if (err) {
+                        return res.status(500).json({ error: 'Database error' });
+                    }
+
+                    stats.programDistribution = programStats;
+                    res.json(stats);
+                });
+            });
+        });
+    });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Route not found' });
+});
+
+// Settings endpoints
+app.get('/api/admin/settings', authenticateToken, (req, res) => {
+    db.all('SELECT * FROM website_settings', (err, rows) => {
+        if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: 'Failed to fetch settings' });
+        }
+        
+        const settings = {};
+        rows.forEach(row => {
+            settings[row.setting_key] = JSON.parse(row.setting_value);
+        });
+        
+        res.json(settings);
+    });
+});
+
+app.put('/api/admin/settings', authenticateToken, (req, res) => {
+    const settings = req.body;
+    
+    const stmt = db.prepare(`
+        INSERT OR REPLACE INTO website_settings (setting_key, setting_value, updated_at)
+        VALUES (?, ?, datetime('now'))
+    `);
+    
+    try {
+        Object.entries(settings).forEach(([key, value]) => {
+            stmt.run([key, JSON.stringify(value)]);
+        });
+        
+        stmt.finalize();
+        res.json({ success: true, message: 'Settings saved successfully' });
+    } catch (error) {
+        console.error('Settings save error:', error);
+        res.status(500).json({ error: 'Failed to save settings' });
+    }
+});
+
+// Backup endpoint
+app.post('/api/admin/backup', authenticateToken, (req, res) => {
+    const fs = require('fs');
+    const path = require('path');
+    
+    try {
+        const dbPath = './kiyumba_school.db';
+        const backupName = `kiyumba_backup_${new Date().toISOString().split('T')[0]}.db`;
+        
+        res.setHeader('Content-Disposition', `attachment; filename="${backupName}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        
+        const readStream = fs.createReadStream(dbPath);
+        readStream.pipe(res);
+    } catch (error) {
+        console.error('Backup error:', error);
+        res.status(500).json({ error: 'Failed to create backup' });
+    }
+});
+
+// Export data endpoint
+app.get('/api/admin/export', authenticateToken, (req, res) => {
+    const exportData = {};
+    
+    // Export all tables
+    const tables = ['registrations', 'contact_messages', 'sms_messages', 'website_settings'];
+    let completed = 0;
+    
+    tables.forEach(table => {
+        db.all(`SELECT * FROM ${table}`, (err, rows) => {
+            if (err) {
+                console.error(`Export error for ${table}:`, err);
+            } else {
+                exportData[table] = rows;
+            }
+            
+            completed++;
+            if (completed === tables.length) {
+                const exportName = `kiyumba_data_export_${new Date().toISOString().split('T')[0]}.json`;
+                
+                res.setHeader('Content-Disposition', `attachment; filename="${exportName}"`);
+                res.setHeader('Content-Type', 'application/json');
+                res.json(exportData);
+            }
+        });
+    });
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Admin panel: http://localhost:${PORT}/admin.html`);
+    console.log(`Website: http://localhost:${PORT}`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\nShutting down server...');
+    db.close((err) => {
+        if (err) {
+            console.error('Error closing database:', err);
+        } else {
+            console.log('Database connection closed.');
+        }
+        process.exit(0);
+    });
+});

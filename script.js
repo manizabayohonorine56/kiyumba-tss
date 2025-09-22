@@ -5,17 +5,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const navMenu = document.querySelector('.nav-menu');
     const navLinks = document.querySelectorAll('.nav-link');
 
-    // Toggle mobile menu
-    hamburger.addEventListener('click', function() {
-        hamburger.classList.toggle('active');
-        navMenu.classList.toggle('active');
-    });
+    // Toggle mobile menu (guard for pages without navbar)
+    if (hamburger && navMenu) {
+        hamburger.addEventListener('click', function() {
+            hamburger.classList.toggle('active');
+            navMenu.classList.toggle('active');
+        });
+    }
 
-    // Close mobile menu when clicking on a link
+    // Close mobile menu when clicking on a link (guarded)
     navLinks.forEach(link => {
         link.addEventListener('click', function() {
-            hamburger.classList.remove('active');
-            navMenu.classList.remove('active');
+            if (hamburger && navMenu) {
+                hamburger.classList.remove('active');
+                navMenu.classList.remove('active');
+            }
         });
     });
 
@@ -33,9 +37,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Navbar scroll effect
+    // Navbar scroll effect (guarded)
     window.addEventListener('scroll', function() {
         const navbar = document.querySelector('.navbar');
+        if (!navbar) return;
         if (window.scrollY > 50) {
             navbar.style.background = 'rgba(255, 255, 255, 0.95)';
             navbar.style.backdropFilter = 'blur(10px)';
@@ -45,9 +50,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Login Form Handler
+    // Login Form Handler (bind only on pages with expected field IDs)
     const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
+    const loginEmailInput = document.getElementById('email');
+    const loginPasswordInput = document.getElementById('password');
+    if (loginForm && loginEmailInput && loginPasswordInput) {
         loginForm.addEventListener('submit', handleLogin);
     }
 
@@ -81,6 +88,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const formData = new FormData(contactForm);
             const name = formData.get('name');
             const email = formData.get('email');
+            const phone = formData.get('phone');
             const message = formData.get('message');
             
             // Basic validation
@@ -98,7 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = {
                 name: name,
                 email: email,
-                phone: phone,
+                phone: phone || '',
                 message: message
             };
 
@@ -432,8 +440,8 @@ const Utils = {
 async function handleLogin(e) {
     e.preventDefault();
     
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
     const submitBtn = document.querySelector('.login-submit-btn');
     
     // Show loading state
@@ -494,8 +502,8 @@ async function handleLogin(e) {
 
 // Auto-fill demo credentials
 function fillDemoCredentials(type) {
-    const emailInput = document.getElementById('loginEmail');
-    const passwordInput = document.getElementById('loginPassword');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
     
     if (type === 'admin') {
         emailInput.value = 'admin@kiyumbaschool.edu';
@@ -510,9 +518,11 @@ function fillDemoCredentials(type) {
 
 // Add event listeners when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    // Login form handler
+    // Login form handler (guarded to only bind on pages with expected fields)
     const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
+    const loginEmailInput2 = document.getElementById('email');
+    const loginPasswordInput2 = document.getElementById('password');
+    if (loginForm && loginEmailInput2 && loginPasswordInput2) {
         loginForm.addEventListener('submit', handleLogin);
     }
 

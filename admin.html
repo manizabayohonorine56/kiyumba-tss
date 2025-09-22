@@ -853,26 +853,27 @@
         // Navigation
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                
-                // Update active nav
-                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-                link.classList.add('active');
-                
-                // Show section
-                const section = link.dataset.section;
-                document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
-                document.getElementById(section).classList.add('active');
-                
-                // Update page title
-                document.getElementById('pageTitle').textContent = link.textContent.trim();
-                
-                // Load section data
-                if (section === 'registrations') loadRegistrations();
-                else if (section === 'messages') loadMessages();
-                else if (section === 'reports') loadReports();
-                else if (section === 'dashboard') loadDashboard();
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    
+                    // Update active nav
+                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+                    
+                    // Show section
+                    const section = link.dataset.section;
+                    document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+                    document.getElementById(section).classList.add('active');
+                    
+                    // Update page title
+                    document.getElementById('pageTitle').textContent = link.textContent.trim();
+                    
+                    // Load section data
+                    if (section === 'registrations') loadRegistrations();
+                    else if (section === 'messages') loadMessages();
+                    else if (section === 'reports') loadReports();
+                    else if (section === 'dashboard') loadDashboard();
+                });
             });
         });
 

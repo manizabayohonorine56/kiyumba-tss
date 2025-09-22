@@ -391,6 +391,18 @@
                 <div class="signup-link">
                     Don't have an account? <a href="registration.html">Register here</a>
                 </div>
+
+                <div class="demo-credentials">
+                    <p style="text-align: center; margin: 1rem 0; color: #64748b; font-size: 0.9rem;">Demo Credentials:</p>
+                    <div style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+                        <button type="button" onclick="fillDemoCredentials('admin')" style="padding: 8px 16px; background: #f1f5f9; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8rem; color: #374151;">
+                            Admin Demo
+                        </button>
+                        <button type="button" onclick="fillDemoCredentials('student')" style="padding: 8px 16px; background: #f1f5f9; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 0.8rem; color: #374151;">
+                            Student Demo
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -401,7 +413,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             const loginForm = document.getElementById('loginForm');
             
-            loginForm.addEventListener('submit', function(e) {
+            loginForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
                 // Get form data
@@ -422,30 +434,55 @@
                     return;
                 }
                 
-                // Simulate login process
+                // Show loading state
                 const loginBtn = document.querySelector('.login-btn');
+                const originalText = loginBtn.innerHTML;
                 loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing In...';
                 loginBtn.disabled = true;
                 
-                // Demo credentials check
-                setTimeout(() => {
-                    if (email === 'student@kiyumbaschool.edu' && password === 'student123') {
+                try {
+                    // Try admin login first
+                    const adminResponse = await fetch('/api/admin/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ email, password })
+                    });
+                    
+                    if (adminResponse.ok) {
+                        const adminData = await adminResponse.json();
+                        
+                        // Store admin token and user data
+                        localStorage.setItem('adminToken', adminData.token);
+                        localStorage.setItem('currentUser', JSON.stringify(adminData.user));
+                        
                         showNotification('Login successful! Redirecting to dashboard...', 'success');
+                        
                         setTimeout(() => {
-                            // In a real application, redirect to dashboard
-                            window.location.href = 'index.html';
-                        }, 2000);
-                    } else if (email === 'teacher@kiyumbaschool.edu' && password === 'teacher123') {
-                        showNotification('Welcome back, Teacher! Redirecting to dashboard...', 'success');
-                        setTimeout(() => {
-                            window.location.href = 'index.html';
-                        }, 2000);
-                    } else {
-                        showNotification('Invalid email or password. Try: student@kiyumbaschool.edu / student123', 'error');
-                        loginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Sign In';
-                        loginBtn.disabled = false;
+                            window.location.href = '/admin.html';
+                        }, 1500);
+                        
+                        return;
                     }
-                }, 1500);
+                    
+                    // If admin login fails, show appropriate message
+                    const adminError = await adminResponse.json();
+                    
+                    if (adminResponse.status === 401) {
+                        showNotification('Invalid email or password. Please check your credentials.', 'error');
+                    } else {
+                        showNotification('Login failed: ' + (adminError.error || 'Unknown error'), 'error');
+                    }
+                    
+                } catch (error) {
+                    console.error('Login error:', error);
+                    showNotification('Network error. Please check your connection and try again.', 'error');
+                } finally {
+                    // Reset button state
+                    loginBtn.innerHTML = originalText;
+                    loginBtn.disabled = false;
+                }
             });
             
             // Social login handlers
@@ -464,18 +501,20 @@
             });
         });
         
-        // Toggle password visibility
-        function togglePassword() {
+        // Demo credentials function
+        function fillDemoCredentials(type) {
+            const emailInput = document.getElementById('email');
             const passwordInput = document.getElementById('password');
-            const passwordIcon = document.getElementById('passwordIcon');
-            
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                passwordIcon.className = 'fas fa-eye-slash';
-            } else {
-                passwordInput.type = 'password';
-                passwordIcon.className = 'fas fa-eye';
+
+            if (type === 'admin') {
+                emailInput.value = 'admin@kiyumbaschool.edu';
+                passwordInput.value = 'admin123';
+            } else if (type === 'student') {
+                emailInput.value = 'student@kiyumbaschool.edu';
+                passwordInput.value = 'student123';
             }
+
+            showNotification(`Demo ${type} credentials filled in!`, 'info');
         }
         
         // Notification function (if not already defined in script.js)

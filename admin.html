@@ -791,8 +791,9 @@
     </div>
 
     <script>
-        let authToken = localStorage.getItem('adminToken');
-        let currentUser = null;
+    let authToken = localStorage.getItem('adminToken');
+    // Try to hydrate currentUser from localStorage so redirects from the landing page work
+    let currentUser = localStorage.getItem('currentUser') ? JSON.parse(localStorage.getItem('currentUser')) : null;
 
         // Check authentication on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -823,8 +824,10 @@
                     authToken = data.token;
                     currentUser = data.user;
                     localStorage.setItem('adminToken', authToken);
-                    showAdminPanel();
-                    loadDashboard();
+                    // Persist currentUser for immediate UI rendering
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    // Reload to ensure DOMContentLoaded checks pick up token and show admin panel
+                    window.location.reload();
                 } else {
                     alert(data.error);
                 }

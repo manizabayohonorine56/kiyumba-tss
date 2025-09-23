@@ -36,7 +36,16 @@ const db = new sqlite3.Database('./kiyumba_school.db', (err) => {
         console.error('Error opening database:', err);
     } else {
         console.log('Connected to SQLite database');
-        initializeDatabase();
+        // Use WAL journal mode and relaxed synchronous mode for improved write performance
+        // This reduces locking contention under concurrent writers and speeds up inserts.
+        db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;", (pragmaErr) => {
+            if (pragmaErr) {
+                console.error('Failed to set PRAGMA:', pragmaErr);
+            } else {
+                console.log('SQLite PRAGMA set: journal_mode=WAL, synchronous=NORMAL');
+            }
+            initializeDatabase();
+        });
     }
 });
 
@@ -105,6 +114,73 @@ function initializeDatabase() {
 
     // Create default admin user
     createDefaultAdmin();
+}
+
+// Start background worker after DB initialization
+startQueueWorker();
+
+// Admin endpoint to view queue length and preview jobs
+app.get('/api/admin/queue', authenticateToken, (req, res) => {
+    const preview = registrationQueue.slice(0, 50).map(job => ({ id: job.id, receivedAt: job.receivedAt, email: job.data.email }));
+    res.json({ queueLength: registrationQueue.length, preview });
+});
+
+// Admin endpoint to view recent insert metrics
+app.get('/api/admin/metrics', authenticateToken, (req, res) => {
+    // Return last N metrics, default 50
+    const count = Math.min(parseInt(req.query.count || '50'), MAX_METRICS);
+    res.json({ metrics: insertMetrics.slice(0, count) });
+});
+
+// In-memory queue and metrics for async registration processing
+const registrationQueue = [];
+let queueCounter = 0;
+const insertMetrics = []; // { jobId, email, durationMs, insertedAt, error }
+const MAX_METRICS = 200;
+
+// Background worker to process registration queue
+function startQueueWorker() {
+    // Process one job at a time every 150ms (tunable)
+    setInterval(() => {
+        if (registrationQueue.length === 0) return;
+
+        const job = registrationQueue.shift();
+        // Perform DB insert similar to previous logic
+        const stmt = db.prepare(`INSERT INTO registrations (
+            firstName, lastName, dateOfBirth, gender, email, phone, address,
+            program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+        const params = [job.data.firstName, job.data.lastName, job.data.dateOfBirth, job.data.gender,
+            job.data.email, job.data.phone, job.data.address, job.data.program, job.data.grade,
+            job.data.parentName, job.data.parentPhone, job.data.previousSchool, job.data.medicalInfo,
+            job.data.newsletter ? 1 : 0];
+
+        const start = Date.now();
+        stmt.run(params, function(err) {
+            const duration = Date.now() - start;
+            const metric = {
+                jobId: job.id,
+                email: job.data.email,
+                durationMs: duration,
+                insertedAt: new Date().toISOString(),
+                error: err ? err.message : null,
+                registrationId: err ? null : this.lastID
+            };
+
+            // Keep metrics bounded
+            insertMetrics.unshift(metric);
+            if (insertMetrics.length > MAX_METRICS) insertMetrics.pop();
+
+            if (err) {
+                console.error('Async registration insert error for job', job.id, err);
+            } else {
+                console.log(`[/queue-worker] job=${job.id} inserted id=${this.lastID} duration=${duration}ms`);
+            }
+
+            try { stmt.finalize(); } catch (e) {}
+        });
+    }, 150);
 }
 
 // Create default admin user
@@ -223,24 +299,28 @@ app.post('/api/register', (req, res) => {
         return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    db.run(`INSERT INTO registrations (
-        firstName, lastName, dateOfBirth, gender, email, phone, address,
-        program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [firstName, lastName, dateOfBirth, gender, email, phone, address,
-     program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter ? 1 : 0],
-    function(err) {
+    // Enqueue the registration for asynchronous processing so we can return immediately
+    const jobId = ++queueCounter;
+    const job = {
+        id: jobId,
+        receivedAt: new Date().toISOString(),
+        data: { firstName, lastName, dateOfBirth, gender, email, phone, address, program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter }
+    };
+
+    // Quick uniqueness check in DB to avoid obvious duplicates (non-blocking)
+    db.get('SELECT id FROM registrations WHERE email = ?', [email], (err, row) => {
         if (err) {
-            if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-                return res.status(400).json({ error: 'Email already registered' });
-            }
-            return res.status(500).json({ error: 'Registration failed' });
+            console.error('Email uniqueness check error:', err);
+            // Still enqueue — worker will handle DB errors
         }
 
-        res.json({
-            message: 'Registration successful',
-            registrationId: this.lastID
-        });
+        if (row) {
+            return res.status(400).json({ error: 'Email already registered' });
+        }
+
+        registrationQueue.push(job);
+
+        res.json({ message: 'Registration received', jobId: jobId, queuePosition: registrationQueue.length });
     });
 });
 

@@ -620,6 +620,7 @@
                 submitBtn.disabled = true;
                 
                 try {
+                    const reqStart = Date.now();
                     const response = await fetch('/api/register', {
                         method: 'POST',
                         headers: {
@@ -644,12 +645,13 @@
                     });
 
                     const result = await response.json();
+                    const reqDuration = Date.now() - reqStart;
 
                     if (response.ok) {
-                        showNotification('Registration submitted successfully! We will contact you soon.', 'success');
+                        showNotification(`Registration submitted successfully! (server: ${result.insertDurationMs || 'n/a'}ms, roundtrip: ${reqDuration}ms)`, 'success');
                         registrationForm.reset();
                     } else {
-                        showNotification(result.error || 'Registration failed. Please try again.', 'error');
+                        showNotification(result.error || `Registration failed. Server responded in ${reqDuration}ms`, 'error');
                     }
                 } catch (error) {
                     showNotification('Network error. Please check your connection and try again.', 'error');

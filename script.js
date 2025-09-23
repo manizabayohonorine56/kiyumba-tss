@@ -50,11 +50,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Login Form Handler (bind only on pages with expected field IDs)
+    // Login Form Handler: bind for any page that has a #loginForm
     const loginForm = document.getElementById('loginForm');
-    const loginEmailInput = document.getElementById('email');
-    const loginPasswordInput = document.getElementById('password');
-    if (loginForm && loginEmailInput && loginPasswordInput) {
+    if (loginForm) {
+        // Attach handler even if input IDs differ between pages (e.g., #email vs #loginEmail)
         loginForm.addEventListener('submit', handleLogin);
     }
 
@@ -384,6 +383,60 @@ document.addEventListener('DOMContentLoaded', function() {
         'color: #64748b; font-size: 12px;');
 });
 
+// Make showNotification available globally so handlers defined outside
+// DOMContentLoaded (like handleLogin) can call it.
+function showNotification(message, type = 'info') {
+    // Remove existing notifications
+    const existingNotifications = document.querySelectorAll('.notification');
+    existingNotifications.forEach(notification => notification.remove());
+
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <div class="notification-content">
+            <span class="notification-message">${message}</span>
+            <button class="notification-close">&times;</button>
+        </div>
+    `;
+
+    // Add styles
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+        color: white;
+        padding: 16px 20px;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        z-index: 10000;
+        transform: translateX(400px);
+        transition: transform 0.3s ease;
+        max-width: 400px;
+    `;
+
+    document.body.appendChild(notification);
+
+    // Animate in
+    setTimeout(() => {
+        notification.style.transform = 'translateX(0)';
+    }, 100);
+
+    const closeBtn = notification.querySelector('.notification-close');
+    closeBtn.addEventListener('click', () => {
+        notification.style.transform = 'translateX(400px)';
+        setTimeout(() => notification.remove(), 300);
+    });
+
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.transform = 'translateX(400px)';
+            setTimeout(() => notification.remove(), 300);
+        }
+    }, 5000);
+}
+
 // Utility functions
 const Utils = {
     // Debounce function for performance optimization
@@ -439,9 +492,17 @@ const Utils = {
 // Login Handler Function
 async function handleLogin(e) {
     e.preventDefault();
-    
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
+    // Support multiple login form variants:
+    // - admin.html uses inputs with ids: #email, #password
+    // - index.html uses inputs with ids: #loginEmail, #loginPassword
+    // Prefer inputs inside the submitted form when possible.
+    const form = e.target && (e.target.tagName === 'FORM' ? e.target : e.target.closest('form')) || document.getElementById('loginForm');
+
+    const emailEl = form.querySelector('input[name="email"], #email, #loginEmail');
+    const passwordEl = form.querySelector('input[name="password"], #password, #loginPassword');
+
+    const email = emailEl ? emailEl.value.trim() : '';
+    const password = passwordEl ? passwordEl.value : '';
     const submitBtn = document.querySelector('.login-submit-btn');
     
     // Show loading state

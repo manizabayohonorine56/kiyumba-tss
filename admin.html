@@ -517,6 +517,7 @@
                             </select>
                             <input type="text" id="dashboardSearch" placeholder="Search name or email" />
                             <button class="btn btn-primary" id="dashboardViewAllBtn"><i class="fas fa-list"></i> View All</button>
+                            <button class="btn" id="dashboardRefreshBtn" title="Refresh"><i class="fas fa-rotate"></i></button>
                             <button class="btn btn-success" id="dashboardApproveSelected" disabled><i class="fas fa-check"></i> Approve Selected</button>
                             <button class="btn btn-danger" id="dashboardRejectSelected" disabled><i class="fas fa-times"></i> Reject Selected</button>
                         </div>
@@ -927,7 +928,6 @@
             if (authToken) {
                 showAdminPanel();
                 loadDashboard();
-                startAutoRefresh();
             }
         });
 
@@ -1043,21 +1043,24 @@
             }
         }
 
-        // Auto refresh dashboard and registrations periodically
-        let autoRefreshTimer = null;
-        function startAutoRefresh() {
-            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-            autoRefreshTimer = setInterval(() => {
-                if (!authToken) return;
-                // Always refresh dashboard counts
+        // Refresh data when window regains focus or visibility changes
+        window.addEventListener('focus', () => {
+            if (!authToken) return;
+            loadDashboard();
+            const activeSection = document.querySelector('.content-section.active');
+            if (activeSection && activeSection.id === 'registrations') {
+                loadRegistrations();
+            }
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && authToken) {
                 loadDashboard();
-                // If registrations section visible, refresh it too
                 const activeSection = document.querySelector('.content-section.active');
                 if (activeSection && activeSection.id === 'registrations') {
                     loadRegistrations();
                 }
-            }, 10000); // every 10 seconds
-        }
+            }
+        });
 
         async function loadRegistrations(page = 1) {
             const status = document.getElementById('statusFilter').value;
@@ -1343,6 +1346,13 @@
         });
         document.getElementById('dashboardApproveSelected').addEventListener('click', () => bulkUpdateRecent('approved'));
         document.getElementById('dashboardRejectSelected').addEventListener('click', () => bulkUpdateRecent('rejected'));
+        document.getElementById('dashboardRefreshBtn').addEventListener('click', () => {
+            loadDashboard();
+            const activeSection = document.querySelector('.content-section.active');
+            if (activeSection && activeSection.id === 'registrations') {
+                loadRegistrations();
+            }
+        });
 
         // Student Reports Functions
         let currentReportFilters = {};

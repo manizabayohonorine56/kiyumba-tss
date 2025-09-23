@@ -506,11 +506,45 @@
                             <p>Student Reports</p>
                         </div>
                     </div>
+                    <div class="stat-card">
+                        <i class="fas fa-envelope" style="color: #ef4444;"></i>
+                        <h3 id="unreadMessages">0</h3>
+                        <p>Unread Messages</p>
+                    </div>
+
+                    <!-- Dashboard Filters & Quick Actions -->
+                    <div class="content-section active" style="margin-top: 1rem; padding: 1rem;">
+                        <div class="filter-bar">
+                            <select id="dashboardStatusFilter" class="btn">
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <input type="text" id="dashboardSearch" placeholder="Search name or email" />
+                            <button class="btn btn-primary" id="dashboardViewAllBtn"><i class="fas fa-list"></i> View All</button>
+                            <button class="btn btn-success" id="dashboardApproveSelected" disabled><i class="fas fa-check"></i> Approve Selected</button>
+                            <button class="btn btn-danger" id="dashboardRejectSelected" disabled><i class="fas fa-times"></i> Reject Selected</button>
                         </div>
-                        <div class="stat-card">
-                            <i class="fas fa-envelope" style="color: #ef4444;"></i>
-                            <h3 id="unreadMessages">0</h3>
-                            <p>Unread Messages</p>
+                        <!-- Recent Registrations Widget -->
+                        <div class="table-container" style="background: white; border-radius: 10px; padding: 1rem;">
+                            <div class="section-header" style="border: none; padding: 0 0 1rem 0;">
+                                <h2 style="margin: 0;">Recent Registrations</h2>
+                                <small style="color:#64748b">Last 5 registrations</small>
+                            </div>
+                            <table id="recentRegistrationsTable">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" id="recentSelectAll" /></th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Program</th>
+                                        <th>Status</th>
+                                        <th>Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -863,6 +897,7 @@
             if (authToken) {
                 showAdminPanel();
                 loadDashboard();
+                startAutoRefresh();
             }
         });
 
@@ -945,21 +980,45 @@
 
         async function loadDashboard() {
             try {
-                const response = await fetch('/api/admin/stats', {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const [statsRes, reportsCountRes] = await Promise.all([
+                    fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                    fetch('/api/admin/reports/count', { headers: { 'Authorization': `Bearer ${authToken}` } })
+                ]);
 
-                if (response.ok) {
-                    const stats = await response.json();
-                    
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
                     document.getElementById('totalRegistrations').textContent = stats.totalRegistrations || 0;
                     document.getElementById('pendingRegistrations').textContent = stats.registrations?.pending || 0;
                     document.getElementById('approvedRegistrations').textContent = stats.registrations?.approved || 0;
                     document.getElementById('unreadMessages').textContent = stats.unreadMessages || 0;
+                    // refresh recent registrations as well to keep widget hot
+                    loadRecentRegistrations();
+                }
+
+                if (reportsCountRes.ok) {
+                    const { count } = await reportsCountRes.json();
+                    const reportsEl = document.getElementById('totalReports');
+                    if (reportsEl) reportsEl.textContent = count || 0;
                 }
             } catch (error) {
                 console.error('Failed to load dashboard stats:', error);
             }
+        }
+
+        // Auto refresh dashboard and registrations periodically
+        let autoRefreshTimer = null;
+        function startAutoRefresh() {
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+            autoRefreshTimer = setInterval(() => {
+                if (!authToken) return;
+                // Always refresh dashboard counts
+                loadDashboard();
+                // If registrations section visible, refresh it too
+                const activeSection = document.querySelector('.content-section.active');
+                if (activeSection && activeSection.id === 'registrations') {
+                    loadRegistrations();
+                }
+            }, 10000); // every 10 seconds
         }
 
         async function loadRegistrations(page = 1) {
@@ -973,6 +1032,9 @@
                 if (response.ok) {
                     const data = await response.json();
                     displayRegistrations(data.registrations);
+                    // Update pending badge in sidebar
+                    const pendingCount = data.registrations.filter(r => r.status === 'pending').length;
+                    updatePendingBadge(pendingCount, data.page === 1);
                     displayPagination(data, 'registrationsPagination', loadRegistrations);
                 }
             } catch (error) {
@@ -1122,6 +1184,110 @@
         document.getElementById('statusFilter').addEventListener('change', () => {
             loadRegistrations(1);
         });
+
+        // Recent Registrations Widget logic
+        async function loadRecentRegistrations() {
+            try {
+                const params = new URLSearchParams({ page: 1, limit: 5, status: document.getElementById('dashboardStatusFilter').value || 'pending' });
+                const response = await fetch(`/api/admin/registrations?${params}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+                const search = (document.getElementById('dashboardSearch').value || '').toLowerCase();
+                const rows = data.registrations.filter(r => !search || `${r.firstName} ${r.lastName}`.toLowerCase().includes(search) || (r.email||'').toLowerCase().includes(search));
+                renderRecentTable(rows);
+                updatePendingBadge(data.registrations.filter(r => r.status==='pending').length, true);
+            } catch (e) { console.error('Failed to load recent registrations', e); }
+        }
+
+        function renderRecentTable(registrations) {
+            const tbody = document.querySelector('#recentRegistrationsTable tbody');
+            tbody.innerHTML = '';
+            registrations.forEach(reg => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><input type="checkbox" class="recent-select" data-id="${reg.id}" /></td>
+                    <td>${reg.firstName} ${reg.lastName}</td>
+                    <td>${reg.email}</td>
+                    <td>${reg.program}</td>
+                    <td><span class="status-badge status-${reg.status}">${reg.status}</span></td>
+                    <td>${new Date(reg.created_at).toLocaleDateString()}</td>
+                    <td>
+                        <button class="btn btn-success" data-action="approve" data-id="${reg.id}" style="padding: 0.25rem 0.5rem;">Approve</button>
+                        <button class="btn btn-danger" data-action="reject" data-id="${reg.id}" style="padding: 0.25rem 0.5rem;">Reject</button>
+                    </td>`;
+                tbody.appendChild(tr);
+            });
+            wireRecentActions();
+        }
+
+        function wireRecentActions() {
+            // Select all
+            const selectAll = document.getElementById('recentSelectAll');
+            if (selectAll) {
+                selectAll.onchange = () => {
+                    document.querySelectorAll('.recent-select').forEach(cb => cb.checked = selectAll.checked);
+                    updateBulkButtonsState();
+                };
+            }
+            // Row checkbox change
+            document.querySelectorAll('.recent-select').forEach(cb => cb.onchange = updateBulkButtonsState);
+            // Approve/Reject single
+            document.querySelectorAll('#recentRegistrationsTable [data-action]')
+                .forEach(btn => btn.onclick = async (e) => {
+                    const id = e.currentTarget.getAttribute('data-id');
+                    const action = e.currentTarget.getAttribute('data-action');
+                    if (action === 'approve') await updateStatus(id, 'approved');
+                    else await updateStatus(id, 'rejected');
+                    loadRecentRegistrations();
+                });
+            updateBulkButtonsState();
+        }
+
+        function getSelectedRecentIds() {
+            return Array.from(document.querySelectorAll('.recent-select:checked')).map(cb => cb.getAttribute('data-id'));
+        }
+
+        async function bulkUpdateRecent(action) {
+            const ids = getSelectedRecentIds();
+            for (const id of ids) {
+                await updateStatus(id, action);
+            }
+            loadRecentRegistrations();
+            loadRegistrations();
+            loadDashboard();
+        }
+
+        function updateBulkButtonsState() {
+            const any = getSelectedRecentIds().length > 0;
+            document.getElementById('dashboardApproveSelected').disabled = !any;
+            document.getElementById('dashboardRejectSelected').disabled = !any;
+        }
+
+        // Sidebar pending badge
+        function updatePendingBadge(count, showIfZero = false) {
+            const link = document.querySelector('.nav-link[data-section="registrations"]');
+            if (!link) return;
+            let badge = link.querySelector('.pending-badge');
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'pending-badge';
+                badge.style.cssText = 'margin-left:auto;background:#f59e0b;color:#1f2937;border-radius:9999px;padding:2px 8px;font-size:12px;';
+                link.appendChild(badge);
+            }
+            badge.textContent = count;
+            badge.style.display = count || showIfZero ? 'inline-block' : 'none';
+        }
+
+        // Dashboard filters wiring
+        document.getElementById('dashboardStatusFilter').addEventListener('change', loadRecentRegistrations);
+        document.getElementById('dashboardSearch').addEventListener('input', Utils.debounce(loadRecentRegistrations, 300));
+        document.getElementById('dashboardViewAllBtn').addEventListener('click', () => {
+            document.querySelector('.nav-link[data-section="registrations"]').click();
+        });
+        document.getElementById('dashboardApproveSelected').addEventListener('click', () => bulkUpdateRecent('approved'));
+        document.getElementById('dashboardRejectSelected').addEventListener('click', () => bulkUpdateRecent('rejected'));
 
         // Student Reports Functions
         let currentReportFilters = {};

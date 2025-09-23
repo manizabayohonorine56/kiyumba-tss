@@ -6,7 +6,7 @@ function loadStudentReports() {
     
     fetch(`/api/admin/student-reports?term=${term}&year=${year}&status=${status}`, {
         headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
         }
     })
     .then(response => response.json())
@@ -37,7 +37,7 @@ function loadApprovedFiles() {
     
     fetch(`/api/admin/approved-files?type=${type}&status=${status}`, {
         headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
         }
     })
     .then(response => response.json())
@@ -83,7 +83,7 @@ function uploadReport() {
             const response = await fetch('/api/admin/upload-report', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
                 },
                 body: formData
             });

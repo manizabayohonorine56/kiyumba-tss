@@ -4,7 +4,7 @@ async function approveStudent(studentId) {
         const response = await fetch(`/api/admin/approve-student/${studentId}`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
             }
         });
         
@@ -14,17 +14,20 @@ async function approveStudent(studentId) {
             throw new Error(result.error || 'Error approving student');
         }
         
-        showNotification(
-            result.emailSent 
-                ? 'Student approved and notification email sent!' 
-                : 'Student approved but email could not be sent',
-            result.emailSent ? 'success' : 'warning'
-        );
+        if (typeof showNotification === 'function') {
+            showNotification(
+                result.emailSent 
+                    ? 'Student approved and notification email sent!' 
+                    : 'Student approved but email could not be sent',
+                result.emailSent ? 'success' : 'info'
+            );
+        } else {
+            alert(result.emailSent ? 'Student approved and email sent.' : 'Student approved, email failed.');
+        }
         
         // Refresh the registrations display
-        loadRegistrations();
-        // Update dashboard stats
-        updateDashboardStats();
+        if (typeof loadRegistrations === 'function') loadRegistrations();
+        if (typeof loadDashboard === 'function') loadDashboard();
         
     } catch (error) {
         console.error('Error:', error);

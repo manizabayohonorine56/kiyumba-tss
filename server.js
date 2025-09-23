@@ -111,6 +111,31 @@ function initializeDatabase() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
+    // Student Reports table
+    db.run(`CREATE TABLE IF NOT EXISTS student_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        report_type TEXT NOT NULL,
+        term TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (student_id) REFERENCES registrations(id)
+    )`);
+
+    // Approved Files table
+    db.run(`CREATE TABLE IF NOT EXISTS approved_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_name TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        file_type TEXT NOT NULL,
+        approved_by TEXT NOT NULL,
+        approval_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'active'
+    )`);
+
     // Website settings table
     db.run(`CREATE TABLE IF NOT EXISTS website_settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,6 +162,113 @@ app.get('/api/admin/metrics', authenticateToken, (req, res) => {
     // Return last N metrics, default 50
     const count = Math.min(parseInt(req.query.count || '50'), MAX_METRICS);
     res.json({ metrics: insertMetrics.slice(0, count) });
+});
+
+// Get student reports count for dashboard
+app.get('/api/admin/reports/count', authenticateToken, (req, res) => {
+    db.get('SELECT COUNT(*) as count FROM student_reports', [], (err, row) => {
+        if (err) {
+            console.error('Error counting reports:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.json({ count: row.count });
+    });
+});
+
+// Upload student report
+app.post('/api/admin/upload-report', authenticateToken, (req, res) => {
+    const { student_id, term, year, type } = req.body;
+    const reportFile = req.files ? req.files.report : null;
+
+    if (!reportFile) {
+        return res.status(400).json({ error: 'No report file provided' });
+    }
+
+    const uploadPath = path.join(__dirname, 'uploads', 'reports', reportFile.name);
+    reportFile.mv(uploadPath, async (err) => {
+        if (err) {
+            console.error('Error uploading file:', err);
+            return res.status(500).json({ error: 'Error uploading file' });
+        }
+
+        const relativePath = path.join('uploads', 'reports', reportFile.name);
+        
+        db.run(`INSERT INTO student_reports (student_id, term, year, report_type, file_path, uploaded_by) 
+                VALUES (?, ?, ?, ?, ?, ?)`,
+            [student_id, term, year, type, relativePath, req.user.email],
+            function(err) {
+                if (err) {
+                    console.error('Error saving report record:', err);
+                    return res.status(500).json({ error: 'Error saving report' });
+                }
+                res.json({ 
+                    message: 'Report uploaded successfully',
+                    id: this.lastID,
+                    path: relativePath
+                });
+            });
+    });
+});
+
+// Get student reports
+app.get('/api/admin/student-reports', authenticateToken, (req, res) => {
+    const { term, year, status } = req.query;
+    let query = `
+        SELECT r.firstName, r.lastName, sr.*
+        FROM student_reports sr
+        JOIN registrations r ON sr.student_id = r.id
+        WHERE 1=1
+    `;
+    const params = [];
+
+    if (term) {
+        query += ` AND sr.term = ?`;
+        params.push(term);
+    }
+    if (year) {
+        query += ` AND sr.year = ?`;
+        params.push(year);
+    }
+    if (status) {
+        query += ` AND sr.status = ?`;
+        params.push(status);
+    }
+
+    query += ` ORDER BY sr.created_at DESC`;
+
+    db.all(query, params, (err, reports) => {
+        if (err) {
+            console.error('Error fetching student reports:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.json({ reports });
+    });
+});
+
+// Get approved files
+app.get('/api/admin/approved-files', authenticateToken, (req, res) => {
+    const { type, status } = req.query;
+    let query = `SELECT * FROM approved_files WHERE 1=1`;
+    const params = [];
+
+    if (type) {
+        query += ` AND file_type = ?`;
+        params.push(type);
+    }
+    if (status) {
+        query += ` AND status = ?`;
+        params.push(status);
+    }
+
+    query += ` ORDER BY approval_date DESC`;
+
+    db.all(query, params, (err, files) => {
+        if (err) {
+            console.error('Error fetching approved files:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.json({ files });
+    });
 });
 
 // In-memory queue and metrics for async registration processing

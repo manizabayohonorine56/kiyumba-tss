@@ -449,11 +449,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="#" class="nav-link" data-section="student-reports">
-                            <i class="fas fa-file-alt"></i> Student Reports
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a href="#" class="nav-link" data-section="approved-files">
                             <i class="fas fa-check-circle"></i> Approved Files
                         </a>
@@ -1035,6 +1030,14 @@
                     const reportsEl = document.getElementById('totalReports');
                     if (reportsEl) reportsEl.textContent = count || 0;
                 }
+
+                // If backend returns recentRegistrations in stats, render them directly (fallback to loader if not)
+                try {
+                    const stats = await (await fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${authToken}` } })).json();
+                    if (stats && Array.isArray(stats.recentRegistrations)) {
+                        renderRecentTable(stats.recentRegistrations);
+                    }
+                } catch {}
             } catch (error) {
                 console.error('Failed to load dashboard stats:', error);
             }

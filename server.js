@@ -12,6 +12,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'kiyumba_school_secret_key_2024';
 
+// Database path - in-memory for Vercel, file for local development
+const DB_PATH = process.env.VERCEL ? ':memory:' : './kiyumba_school.db';
+console.log(`Using database at: ${DB_PATH}`);
+
 // Security middleware
 app.use(helmet({
     contentSecurityPolicy: false // Disable for development
@@ -31,21 +35,24 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
 
 // Database connection
-const db = new sqlite3.Database('./kiyumba_school.db', (err) => {
+const db = new sqlite3.Database(DB_PATH, (err) => {
     if (err) {
         console.error('Error opening database:', err);
     } else {
         console.log('Connected to SQLite database');
-        // Use WAL journal mode and relaxed synchronous mode for improved write performance
-        // This reduces locking contention under concurrent writers and speeds up inserts.
-        db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;", (pragmaErr) => {
-            if (pragmaErr) {
-                console.error('Failed to set PRAGMA:', pragmaErr);
-            } else {
-                console.log('SQLite PRAGMA set: journal_mode=WAL, synchronous=NORMAL');
-            }
+        // Only use WAL in development; in Vercel we use in-memory DB
+        if (!process.env.VERCEL) {
+            db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;", (pragmaErr) => {
+                if (pragmaErr) {
+                    console.error('Failed to set PRAGMA:', pragmaErr);
+                } else {
+                    console.log('SQLite PRAGMA set: journal_mode=WAL, synchronous=NORMAL');
+                }
+                initializeDatabase();
+            });
+        } else {
             initializeDatabase();
-        });
+        }
     }
 });
 

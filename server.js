@@ -6,11 +6,57 @@ const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'kiyumba_school_secret_key_2024';
+
+// Email configuration
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER || 'your-email@gmail.com',
+        pass: process.env.EMAIL_PASS || 'your-app-specific-password'
+    }
+});
+
+// Email sending function
+async function sendApprovalEmail(studentEmail, firstName, lastName) {
+    const mailOptions = {
+        from: process.env.EMAIL_USER || 'your-email@gmail.com',
+        to: studentEmail,
+        subject: 'Kiyumba School - Registration Approved',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #2563eb;">Kiyumba School Registration</h2>
+                <p>Dear ${firstName} ${lastName},</p>
+                <p>We are pleased to inform you that your registration at Kiyumba School has been approved.</p>
+                <p>You can now proceed with the next steps in the enrollment process. Our administration team will contact you shortly with further details.</p>
+                <div style="margin: 20px 0; padding: 15px; background-color: #f8fafc; border-radius: 5px;">
+                    <p style="margin: 0; color: #1e293b;">Next Steps:</p>
+                    <ul>
+                        <li>Complete your medical forms</li>
+                        <li>Submit required documents</li>
+                        <li>Pay registration fees</li>
+                    </ul>
+                </div>
+                <p>If you have any questions, please don't hesitate to contact us.</p>
+                <p>Best regards,<br>Kiyumba School Administration</p>
+            </div>
+        `
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log('Approval email sent to:', studentEmail);
+        return true;
+    } catch (error) {
+        console.error('Error sending approval email:', error);
+        return false;
+    }
+}
 
 // Database path - in-memory for Vercel, file for local development
 const DB_PATH = process.env.VERCEL ? ':memory:' : './kiyumba_school.db';
@@ -155,6 +201,55 @@ startQueueWorker();
 app.get('/api/admin/queue', authenticateToken, (req, res) => {
     const preview = registrationQueue.slice(0, 50).map(job => ({ id: job.id, receivedAt: job.receivedAt, email: job.data.email }));
     res.json({ queueLength: registrationQueue.length, preview });
+});
+
+// Approve student registration
+app.post('/api/admin/approve-student/:id', authenticateToken, async (req, res) => {
+    const studentId = req.params.id;
+    
+    db.get('SELECT firstName, lastName, email, status FROM registrations WHERE id = ?', 
+        [studentId], 
+        async (err, student) => {
+            if (err) {
+                console.error('Error fetching student:', err);
+                return res.status(500).json({ error: 'Internal server error' });
+            }
+            
+            if (!student) {
+                return res.status(404).json({ error: 'Student not found' });
+            }
+            
+            if (student.status === 'approved') {
+                return res.status(400).json({ error: 'Student is already approved' });
+            }
+            
+            // Update student status to approved
+            db.run('UPDATE registrations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                ['approved', studentId],
+                async (updateErr) => {
+                    if (updateErr) {
+                        console.error('Error updating student status:', updateErr);
+                        return res.status(500).json({ error: 'Error updating student status' });
+                    }
+                    
+                    // Send approval email
+                    const emailSent = await sendApprovalEmail(
+                        student.email,
+                        student.firstName,
+                        student.lastName
+                    );
+                    
+                    res.json({ 
+                        message: 'Student approved successfully',
+                        emailSent: emailSent
+                    });
+                    
+                    // Update statistics
+                    updateRegistrationStats();
+                }
+            );
+        }
+    );
 });
 
 // Admin endpoint to view recent insert metrics

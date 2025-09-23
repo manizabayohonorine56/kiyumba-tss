@@ -7,6 +7,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="admin_reports.css" rel="stylesheet">
+    <link href="admin_approval.css" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -1003,21 +1004,49 @@
 
         async function updateStatus(id, status) {
             try {
-                const response = await fetch(`/api/admin/registrations/${id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ status })
-                });
+                // When approving, use the dedicated endpoint that also sends an email
+                if (status === 'approved') {
+                    const response = await fetch(`/api/admin/approve-student/${id}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`
+                        }
+                    });
 
-                if (response.ok) {
-                    loadRegistrations();
-                    loadDashboard();
+                    const data = await response.json();
+                    if (response.ok) {
+                        if (typeof data.emailSent !== 'undefined') {
+                            alert(data.emailSent
+                                ? 'Student approved and notification email sent.'
+                                : 'Student approved, but email could not be sent.');
+                        }
+                        loadRegistrations();
+                        loadDashboard();
+                    } else {
+                        alert(data.error || 'Failed to approve student');
+                    }
+                } else {
+                    // For other status changes, keep existing update endpoint
+                    const response = await fetch(`/api/admin/registrations/${id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ status })
+                    });
+
+                    if (response.ok) {
+                        loadRegistrations();
+                        loadDashboard();
+                    } else {
+                        const data = await response.json().catch(() => ({}));
+                        alert(data.error || 'Failed to update status');
+                    }
                 }
             } catch (error) {
                 console.error('Failed to update status:', error);
+                alert('Network error while updating status');
             }
         }
 

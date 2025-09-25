@@ -450,7 +450,7 @@
                     </li>
                     <li class="nav-item">
                         <a href="#" class="nav-link" data-section="student-reports">
-                            <i class="fas fa-file-alt"></i> Student Reports
+                            <i class="fas fa-file-alt"></i> Uploaded Reports
                         </a>
                     </li>
                     <li class="nav-item">
@@ -504,8 +504,6 @@
                             <i class="fas fa-file-alt" style="color: #6366f1;"></i>
                             <h3 id="totalReports">0</h3>
                             <p>Student Reports</p>
-                        </div>
-                    </div>
                         </div>
                         <div class="stat-card">
                             <i class="fas fa-envelope" style="color: #ef4444;"></i>
@@ -687,6 +685,42 @@
                         </table>
                     </div>
                     <div class="pagination" id="reportsPagination"></div>
+                </div>
+
+                <!-- Uploaded Student Reports Section -->
+                <div id="student-reports" class="content-section">
+                    <div class="section-header">
+                        <h2>Uploaded Student Reports</h2>
+                        <div>
+                            <select id="srStatusFilter" class="btn">
+                                <option value="">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <input type="text" id="srTermFilter" placeholder="Term (e.g., Term 1)" class="btn" style="margin-left: 0.5rem;">
+                            <input type="number" id="srYearFilter" placeholder="Year" class="btn" style="margin-left: 0.5rem; width: 110px;">
+                            <button class="btn btn-primary" onclick="loadStudentReports(1)" style="margin-left: 0.5rem;">Apply</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="studentReportsTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Student</th>
+                                    <th>Report Type</th>
+                                    <th>Term</th>
+                                    <th>Year</th>
+                                    <th>File</th>
+                                    <th>Status</th>
+                                    <th>Uploaded By</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- Settings Section -->
@@ -957,6 +991,7 @@
                     if (section === 'registrations') loadRegistrations();
                     else if (section === 'messages') loadMessages();
                     else if (section === 'reports') loadReports();
+                    else if (section === 'student-reports') loadStudentReports();
                     else if (section === 'dashboard') loadDashboard();
                 });
             });
@@ -1326,6 +1361,51 @@
             if (student) {
                 alert(`Student Details:\n\nName: ${student.name}\nEmail: ${student.email}\nPhone: ${student.phone}\nProgram: ${student.program}\nGrade: ${student.grade}\nParent: ${student.parent}\nStatus: ${student.status}\nRegistration Date: ${student.registrationDate}`);
             }
+        }
+
+        // Uploaded Student Reports: fetch and render
+        async function loadStudentReports(page = 1) {
+            const term = document.getElementById('srTermFilter')?.value || '';
+            const year = document.getElementById('srYearFilter')?.value || '';
+            const status = document.getElementById('srStatusFilter')?.value || '';
+
+            const params = new URLSearchParams();
+            if (term) params.set('term', term);
+            if (year) params.set('year', year);
+            if (status) params.set('status', status);
+
+            try {
+                const response = await fetch(`/api/admin/student-reports?${params.toString()}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+                displayStudentReports(data.reports || []);
+            } catch (e) {
+                console.error('Failed to load student reports', e);
+            }
+        }
+
+        function displayStudentReports(reports) {
+            const tbody = document.querySelector('#studentReportsTable tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            reports.forEach(r => {
+                const row = document.createElement('tr');
+                const fileHref = `/${r.file_path}`.replace(/\\/g, '/');
+                row.innerHTML = `
+                    <td>${r.id}</td>
+                    <td>${r.firstName} ${r.lastName}</td>
+                    <td>${r.report_type}</td>
+                    <td>${r.term}</td>
+                    <td>${r.year}</td>
+                    <td><a href="${fileHref}" target="_blank" class="btn">Download</a></td>
+                    <td><span class="status-badge status-${r.status}">${r.status}</span></td>
+                    <td>${r.uploaded_by}</td>
+                    <td>${new Date(r.created_at).toLocaleDateString()}</td>
+                `;
+                tbody.appendChild(row);
+            });
         }
 
         // Settings Functions

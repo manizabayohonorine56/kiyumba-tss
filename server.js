@@ -7,6 +7,8 @@ const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
+const multer = require('multer');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -99,6 +101,25 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads', 'reports');
+try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) {}
+
+// Configure multer storage for report uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadsDir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, file.originalname);
+    }
+});
+// Increase upload limits: adjust as needed (e.g., 50MB)
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 50 * 1024 * 1024 } // 50 MB
+});
 
 // Database connection
 const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -321,39 +342,31 @@ app.get('/api/admin/reports/count', authenticateToken, (req, res) => {
     });
 });
 
-// Upload student report
-app.post('/api/admin/upload-report', authenticateToken, (req, res) => {
+// Upload student report (multipart/form-data)
+app.post('/api/admin/upload-report', authenticateToken, upload.single('report'), (req, res) => {
     const { student_id, term, year, type } = req.body;
-    const reportFile = req.files ? req.files.report : null;
+    const reportFile = req.file;
 
     if (!reportFile) {
         return res.status(400).json({ error: 'No report file provided' });
     }
 
-    const uploadPath = path.join(__dirname, 'uploads', 'reports', reportFile.name);
-    reportFile.mv(uploadPath, async (err) => {
-        if (err) {
-            console.error('Error uploading file:', err);
-            return res.status(500).json({ error: 'Error uploading file' });
-        }
+    const relativePath = path.join('uploads', 'reports', reportFile.filename);
 
-        const relativePath = path.join('uploads', 'reports', reportFile.name);
-        
-        db.run(`INSERT INTO student_reports (student_id, term, year, report_type, file_path, uploaded_by) 
-                VALUES (?, ?, ?, ?, ?, ?)`,
-            [student_id, term, year, type, relativePath, req.user.email],
-            function(err) {
-                if (err) {
-                    console.error('Error saving report record:', err);
-                    return res.status(500).json({ error: 'Error saving report' });
-                }
-                res.json({ 
-                    message: 'Report uploaded successfully',
-                    id: this.lastID,
-                    path: relativePath
-                });
+    db.run(`INSERT INTO student_reports (student_id, term, year, report_type, file_path, uploaded_by) 
+            VALUES (?, ?, ?, ?, ?, ?)`,
+        [student_id, term, year, type, relativePath, req.user.email],
+        function(err) {
+            if (err) {
+                console.error('Error saving report record:', err);
+                return res.status(500).json({ error: 'Error saving report' });
+            }
+            res.json({ 
+                message: 'Report uploaded successfully',
+                id: this.lastID,
+                path: relativePath
             });
-    });
+        });
 });
 
 // Get student reports
@@ -373,12 +386,7 @@ app.get('/api/admin/student-reports', authenticateToken, (req, res) => {
     }
     if (year) {
         query += ` AND sr.year = ?`;
-            // Broadcast to SSE admin clients about the new registration
-            try {
-                const inserted = Object.assign({}, job.data, { id: this.lastID, created_at: new Date().toISOString(), status: 'pending' });
-                broadcastNewRegistration(inserted);
-            } catch (e) {}
-            res.json({ message: 'Registration received', registrationId: this.lastID, insertDurationMs: duration });
+        params.push(year);
     }
     if (status) {
         query += ` AND sr.status = ?`;
@@ -1116,17 +1124,16 @@ app.put('/api/admin/settings', authenticateToken, (req, res) => {
 
 // Backup endpoint
 app.post('/api/admin/backup', authenticateToken, (req, res) => {
-    const fs = require('fs');
-    const path = require('path');
-    
     try {
-        const dbPath = './kiyumba_school.db';
+        if (DB_PATH === ':memory:') {
+            return res.status(400).json({ error: 'Backup not available for in-memory database' });
+        }
+
         const backupName = `kiyumba_backup_${new Date().toISOString().split('T')[0]}.db`;
-        
         res.setHeader('Content-Disposition', `attachment; filename="${backupName}"`);
         res.setHeader('Content-Type', 'application/octet-stream');
-        
-        const readStream = fs.createReadStream(dbPath);
+
+        const readStream = fs.createReadStream(DB_PATH);
         readStream.pipe(res);
     } catch (error) {
         console.error('Backup error:', error);

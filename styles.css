@@ -399,6 +399,32 @@ body {
     box-shadow: 0 5px 15px rgba(37, 99, 235, 0.3);
 }
 
+/* Ensure login submit button is visible on light backgrounds (override hero styles) */
+.login-submit-btn,
+.login-form .login-submit-btn,
+form.login-form .login-submit-btn {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+    color: #fff !important;
+    border: none !important;
+    padding: 12px 18px !important;
+    border-radius: 8px !important;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-submit-btn i {
+    margin-right: 8px;
+}
+
+/* Fallback for any .btn-primary inside light forms used as login buttons */
+form.login-form .btn-primary {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+    color: #fff !important;
+    border: none !important;
+}
+
 /* Contact Section */
 .contact {
     padding: 100px 0;

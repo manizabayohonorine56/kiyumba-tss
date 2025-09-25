@@ -526,6 +526,9 @@
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
                             </select>
+                            <label style="margin-left: 1rem; font-weight: normal;">
+                                <input type="checkbox" id="showAllCheckbox"> Show all registrations
+                            </label>
                         </div>
                     </div>
                     <div class="table-container">
@@ -987,11 +990,16 @@
         }
         */
 
+        let _registrationsLoading = false;
         async function loadRegistrations(page = 1) {
+            if (_registrationsLoading) return; // prevent concurrent loads
+            _registrationsLoading = true;
             const status = document.getElementById('statusFilter').value;
-            
+            const showAll = document.getElementById('showAllCheckbox').checked;
+            const limitParam = showAll ? 0 : 50; // 0 means return all
+
             try {
-                const response = await fetch(`/api/admin/registrations?page=${page}&status=${status}`, {
+                const response = await fetch(`/api/admin/registrations?page=${page}&status=${status}&limit=${limitParam}`, {
                     headers: { 'Authorization': `Bearer ${authToken}` }
                 });
 
@@ -1002,6 +1010,8 @@
                 }
             } catch (error) {
                 console.error('Failed to load registrations:', error);
+            } finally {
+                _registrationsLoading = false;
             }
         }
 

@@ -697,14 +697,19 @@ app.get('/api/admin/registrations', authenticateToken, (req, res) => {
         params.push(program);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+    // If limit is 0, return all matching rows (no LIMIT/OFFSET)
+    const limitNum = parseInt(limit);
+    if (limitNum > 0) {
+        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        params.push(limitNum, (parseInt(page) - 1) * limitNum);
+    } else {
+        query += ' ORDER BY created_at DESC';
+    }
 
     db.all(query, params, (err, rows) => {
         if (err) {
             return res.status(500).json({ error: 'Database error' });
         }
-
         // Get total count
         let countQuery = 'SELECT COUNT(*) as total FROM registrations WHERE 1=1';
         let countParams = [];
@@ -724,11 +729,13 @@ app.get('/api/admin/registrations', authenticateToken, (req, res) => {
                 return res.status(500).json({ error: 'Database error' });
             }
 
+            const total = countResult.total || 0;
+            const totalPages = limitNum > 0 ? Math.ceil(total / limitNum) : 1;
             res.json({
                 registrations: rows,
-                total: countResult.total,
-                page: parseInt(page),
-                totalPages: Math.ceil(countResult.total / parseInt(limit))
+                total: total,
+                page: limitNum > 0 ? parseInt(page) : 1,
+                totalPages: totalPages
             });
         });
     });

@@ -648,7 +648,10 @@
                     const reqDuration = Date.now() - reqStart;
 
                     if (response.ok) {
-                        showNotification(`Registration submitted successfully! (server: ${result.insertDurationMs || 'n/a'}ms, roundtrip: ${reqDuration}ms)`, 'success');
+                        // Keep the user-facing message clean (no debug metrics)
+                        showNotification('Registration submitted successfully!', 'success');
+                        // Developer-only metrics retained in console for debugging
+                        console.debug(`Registration metrics: server=${result.insertDurationMs || 'n/a'}ms, roundtrip=${reqDuration}ms`);
                         registrationForm.reset();
                     } else {
                         showNotification(result.error || `Registration failed. Server responded in ${reqDuration}ms`, 'error');

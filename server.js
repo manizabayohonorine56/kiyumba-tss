@@ -22,6 +22,20 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// SSE clients (admin dashboards listening for new registrations)
+const sseClients = [];
+
+function broadcastNewRegistration(registration) {
+    const payload = JSON.stringify({ type: 'registration', registration });
+    sseClients.forEach(res => {
+        try {
+            res.write(`data: ${payload}\n\n`);
+        } catch (e) {
+            // ignore
+        }
+    });
+}
+
 // Email sending function
 async function sendApprovalEmail(studentEmail, firstName, lastName) {
     const mailOptions = {
@@ -209,6 +223,34 @@ app.get('/api/admin/queue', authenticateToken, (req, res) => {
     res.json({ queueLength: registrationQueue.length, preview });
 });
 
+// SSE endpoint for admin dashboards to receive live events (must provide Bearer token)
+app.get('/events', (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).end('Unauthorized');
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).end('Forbidden');
+
+        // Setup SSE headers
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+        });
+        res.write('\n');
+
+        // Add to clients
+        sseClients.push(res);
+
+        // Remove client on close
+        req.on('close', () => {
+            const idx = sseClients.indexOf(res);
+            if (idx !== -1) sseClients.splice(idx, 1);
+        });
+    });
+});
+
 // Approve student registration
 app.post('/api/admin/approve-student/:id', authenticateToken, async (req, res) => {
     const studentId = req.params.id;
@@ -328,7 +370,12 @@ app.get('/api/admin/student-reports', authenticateToken, (req, res) => {
     }
     if (year) {
         query += ` AND sr.year = ?`;
-        params.push(year);
+            // Broadcast to SSE admin clients about the new registration
+            try {
+                const inserted = Object.assign({}, job.data, { id: this.lastID, created_at: new Date().toISOString(), status: 'pending' });
+                broadcastNewRegistration(inserted);
+            } catch (e) {}
+            res.json({ message: 'Registration received', registrationId: this.lastID, insertDurationMs: duration });
     }
     if (status) {
         query += ` AND sr.status = ?`;
@@ -416,6 +463,10 @@ function startQueueWorker() {
                 console.error('Async registration insert error for job', job.id, err);
             } else {
                 console.log(`[/queue-worker] job=${job.id} inserted id=${this.lastID} duration=${duration}ms`);
+                try {
+                    const inserted = Object.assign({}, job.data, { id: this.lastID, created_at: new Date().toISOString(), status: 'pending' });
+                    broadcastNewRegistration(inserted);
+                } catch (e) {}
             }
 
             try { stmt.finalize(); } catch (e) {}

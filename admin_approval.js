@@ -16,11 +16,13 @@ async function approveStudent(studentId) {
         
         if (typeof showNotification === 'function') {
             showNotification(
-                result.emailSent
-                    ? 'Student approved and notification email sent!'
+                result.emailSent 
+                    ? 'Student approved and notification email sent!' 
                     : 'Student approved but email could not be sent',
                 result.emailSent ? 'success' : 'info'
             );
+        } else {
+            alert(result.emailSent ? 'Student approved and email sent.' : 'Student approved, email failed.');
         }
         
         // Refresh the registrations display

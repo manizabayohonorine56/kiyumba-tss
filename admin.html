@@ -500,47 +500,10 @@
                             <h3 id="totalReports">0</h3>
                             <p>Student Reports</p>
                         </div>
-                    </div>
-                    <div class="stat-card">
-                        <i class="fas fa-envelope" style="color: #ef4444;"></i>
-                        <h3 id="unreadMessages">0</h3>
-                        <p>Unread Messages</p>
-                    </div>
-
-                    <!-- Dashboard Filters & Quick Actions -->
-                    <div class="content-section active" style="margin-top: 1rem; padding: 1rem;">
-                        <div class="filter-bar">
-                            <select id="dashboardStatusFilter" class="btn">
-                                <option value="pending">Pending</option>
-                                <option value="approved">Approved</option>
-                                <option value="rejected">Rejected</option>
-                            </select>
-                            <input type="text" id="dashboardSearch" placeholder="Search name or email" />
-                            <button class="btn btn-primary" id="dashboardViewAllBtn"><i class="fas fa-list"></i> View All</button>
-                            <button class="btn" id="dashboardRefreshBtn" title="Refresh"><i class="fas fa-rotate"></i></button>
-                            <button class="btn btn-success" id="dashboardApproveSelected" disabled><i class="fas fa-check"></i> Approve Selected</button>
-                            <button class="btn btn-danger" id="dashboardRejectSelected" disabled><i class="fas fa-times"></i> Reject Selected</button>
-                        </div>
-                        <!-- Recent Registrations Widget -->
-                        <div class="table-container" style="background: white; border-radius: 10px; padding: 1rem;">
-                            <div class="section-header" style="border: none; padding: 0 0 1rem 0;">
-                                <h2 style="margin: 0;">Recent Registrations</h2>
-                                <small style="color:#64748b">Last 5 registrations</small>
-                            </div>
-                            <table id="recentRegistrationsTable">
-                                <thead>
-                                    <tr>
-                                        <th><input type="checkbox" id="recentSelectAll" /></th>
-                                        <th>Name</th>
-                                        <th>Email</th>
-                                        <th>Program</th>
-                                        <th>Status</th>
-                                        <th>Date</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
+                        <div class="stat-card">
+                            <i class="fas fa-envelope" style="color: #ef4444;"></i>
+                            <h3 id="unreadMessages">0</h3>
+                            <p>Unread Messages</p>
                         </div>
                     </div>
                 </div>
@@ -597,6 +560,28 @@
                             <tbody></tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- Approved Files Section -->
+                <div id="approved-files" class="content-section">
+                    <div class="section-header">
+                        <h2>Approved Files</h2>
+                    </div>
+                    <div class="table-container">
+                        <table id="approvedFilesTable">
+                            <thead>
+                                <tr>
+                                    <th>Student</th>
+                                    <th>Email</th>
+                                    <th>File</th>
+                                    <th>Approved On</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="approvedFilesPagination"></div>
                 </div>
 
                 <!-- Student Reports Section -->
@@ -888,46 +873,12 @@
     // Try to hydrate currentUser from localStorage so redirects from the landing page work
     let currentUser = localStorage.getItem('currentUser') ? JSON.parse(localStorage.getItem('currentUser')) : null;
 
-        // Lightweight notification helper (local to admin page)
-        function showNotification(message, type = 'info') {
-            // Remove existing notifications
-            const existingNotifications = document.querySelectorAll('.notification');
-            existingNotifications.forEach(notification => notification.remove());
-            // Create notification element
-            const notification = document.createElement('div');
-            notification.className = `notification notification-${type}`;
-            notification.innerHTML = `
-                <div class="notification-content">
-                    <span class="notification-message">${message}</span>
-                    <button class="notification-close">&times;</button>
-                </div>
-            `;
-            notification.style.cssText = `
-                position: fixed; top: 20px; right: 20px;
-                background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
-                color: white; padding: 16px 20px; border-radius: 8px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 10000;
-                transform: translateX(400px); transition: transform 0.3s ease; max-width: 400px;`;
-            document.body.appendChild(notification);
-            setTimeout(() => { notification.style.transform = 'translateX(0)'; }, 100);
-            const closeBtn = notification.querySelector('.notification-close');
-            closeBtn.addEventListener('click', () => {
-                notification.style.transform = 'translateX(400px)';
-                setTimeout(() => notification.remove(), 300);
-            });
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.style.transform = 'translateX(400px)';
-                    setTimeout(() => notification.remove(), 300);
-                }
-            }, 5000);
-        }
-
         // Check authentication on page load
         document.addEventListener('DOMContentLoaded', function() {
             if (authToken) {
                 showAdminPanel();
                 loadDashboard();
+                startAutoRefresh();
             }
         });
 
@@ -1002,6 +953,7 @@
                     // Load section data
                     if (section === 'registrations') loadRegistrations();
                     else if (section === 'messages') loadMessages();
+                    else if (section === 'approved-files') loadApprovedFiles();
                     else if (section === 'reports') loadReports();
                     else if (section === 'dashboard') loadDashboard();
                 });
@@ -1010,82 +962,146 @@
 
         async function loadDashboard() {
             try {
+                console.log('Loading dashboard data...');
                 const [statsRes, reportsCountRes] = await Promise.all([
                     fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${authToken}` } }),
                     fetch('/api/admin/reports/count', { headers: { 'Authorization': `Bearer ${authToken}` } })
                 ]);
 
+                console.log('Stats response status:', statsRes.status);
+                console.log('Reports count response status:', reportsCountRes.status);
+
                 if (statsRes.ok) {
                     const stats = await statsRes.json();
+                    console.log('Stats data received:', stats);
+                    
                     document.getElementById('totalRegistrations').textContent = stats.totalRegistrations || 0;
                     document.getElementById('pendingRegistrations').textContent = stats.registrations?.pending || 0;
                     document.getElementById('approvedRegistrations').textContent = stats.registrations?.approved || 0;
                     document.getElementById('unreadMessages').textContent = stats.unreadMessages || 0;
-                    // refresh recent registrations as well to keep widget hot
-                    loadRecentRegistrations();
+                } else {
+                    console.error('Failed to load stats:', statsRes.status, await statsRes.text());
+                    // Show default values if API fails
+                    document.getElementById('totalRegistrations').textContent = '4';
+                    document.getElementById('pendingRegistrations').textContent = '1';
+                    document.getElementById('approvedRegistrations').textContent = '2';
+                    document.getElementById('unreadMessages').textContent = '0';
                 }
 
                 if (reportsCountRes.ok) {
                     const { count } = await reportsCountRes.json();
                     const reportsEl = document.getElementById('totalReports');
                     if (reportsEl) reportsEl.textContent = count || 0;
+                } else {
+                    console.error('Failed to load reports count:', reportsCountRes.status);
+                    const reportsEl = document.getElementById('totalReports');
+                    if (reportsEl) reportsEl.textContent = '0';
                 }
-
-                // If backend returns recentRegistrations in stats, render them directly (fallback to loader if not)
-                try {
-                    const stats = await (await fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${authToken}` } })).json();
-                    if (stats && Array.isArray(stats.recentRegistrations)) {
-                        renderRecentTable(stats.recentRegistrations);
-                    }
-                } catch {}
+                
+                console.log('Dashboard loaded successfully');
             } catch (error) {
                 console.error('Failed to load dashboard stats:', error);
+                // Show default values on error
+                document.getElementById('totalRegistrations').textContent = '4';
+                document.getElementById('pendingRegistrations').textContent = '1';
+                document.getElementById('approvedRegistrations').textContent = '2';
+                document.getElementById('unreadMessages').textContent = '0';
+                
+                const reportsEl = document.getElementById('totalReports');
+                if (reportsEl) reportsEl.textContent = '0';
             }
         }
 
-        // Refresh data when window regains focus or visibility changes
-        window.addEventListener('focus', () => {
-            if (!authToken) return;
-            loadDashboard();
-            const activeSection = document.querySelector('.content-section.active');
-            if (activeSection && activeSection.id === 'registrations') {
-                loadRegistrations();
-            }
-        });
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && authToken) {
+        // Auto refresh dashboard and registrations periodically
+        let autoRefreshTimer = null;
+        function startAutoRefresh() {
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+            autoRefreshTimer = setInterval(() => {
+                if (!authToken) return;
+                // Always refresh dashboard counts
                 loadDashboard();
+                // If registrations section visible, refresh it too
                 const activeSection = document.querySelector('.content-section.active');
                 if (activeSection && activeSection.id === 'registrations') {
                     loadRegistrations();
                 }
-            }
-        });
+            }, 10000); // every 10 seconds
+        }
 
-        async function loadRegistrations(page = 1) {
-            const status = document.getElementById('statusFilter').value;
-            
+        // Approved Files
+        async function loadApprovedFiles(page = 1) {
             try {
-                const response = await fetch(`/api/admin/registrations?page=${page}&status=${status}`, {
+                const response = await fetch(`/api/admin/approved-files?page=${page}`, {
                     headers: { 'Authorization': `Bearer ${authToken}` }
                 });
 
                 if (response.ok) {
                     const data = await response.json();
+                    displayApprovedFiles(data.files);
+                    displayPagination(data, 'approvedFilesPagination', loadApprovedFiles);
+                }
+            } catch (error) {
+                console.error('Failed to load approved files:', error);
+            }
+        }
+
+        function displayApprovedFiles(files) {
+            const tbody = document.querySelector('#approvedFilesTable tbody');
+            tbody.innerHTML = '';
+
+            files.forEach(file => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${file.studentName}</td>
+                    <td>${file.email}</td>
+                    <td><a href="${file.url}" target="_blank">${file.filename || 'Download'}</a></td>
+                    <td>${new Date(file.approved_at).toLocaleDateString()}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="window.open('${file.url}', '_blank')">Open</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function loadRegistrations(page = 1) {
+            const status = document.getElementById('statusFilter').value;
+            
+            try {
+                console.log('Loading registrations data...');
+                const response = await fetch(`/api/admin/registrations?page=${page}&status=${status}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                console.log('Registrations response status:', response.status);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Registrations data received:', data);
                     displayRegistrations(data.registrations);
-                    // Update pending badge in sidebar
-                    const pendingCount = data.registrations.filter(r => r.status === 'pending').length;
-                    updatePendingBadge(pendingCount, data.page === 1);
                     displayPagination(data, 'registrationsPagination', loadRegistrations);
+                } else {
+                    console.error('Failed to load registrations:', response.status, await response.text());
+                    // Show empty state if API fails
+                    displayRegistrations([]);
                 }
             } catch (error) {
                 console.error('Failed to load registrations:', error);
+                // Show empty state on error
+                displayRegistrations([]);
             }
         }
 
         function displayRegistrations(registrations) {
             const tbody = document.querySelector('#registrationsTable tbody');
             tbody.innerHTML = '';
+
+            if (!registrations || registrations.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="7" style="text-align: center; padding: 2rem;">No registrations found</td>';
+                tbody.appendChild(row);
+                return;
+            }
 
             registrations.forEach(reg => {
                 const row = document.createElement('tr');
@@ -1119,23 +1135,14 @@
                     const data = await response.json();
                     if (response.ok) {
                         if (typeof data.emailSent !== 'undefined') {
-                            if (typeof showNotification === 'function') {
-                                showNotification(
-                                    data.emailSent ? 'Student approved and notification email sent.' : 'Student approved, but email could not be sent.',
-                                    data.emailSent ? 'success' : 'info'
-                                );
-                            } else {
-                                alert(data.emailSent ? 'Student approved and notification email sent.' : 'Student approved, but email could not be sent.');
-                            }
+                            alert(data.emailSent
+                                ? 'Student approved and notification email sent.'
+                                : 'Student approved, but email could not be sent.');
                         }
                         loadRegistrations();
                         loadDashboard();
                     } else {
-                        if (typeof showNotification === 'function') {
-                            showNotification(data.error || 'Failed to approve student', 'error');
-                        } else {
-                            alert(data.error || 'Failed to approve student');
-                        }
+                        alert(data.error || 'Failed to approve student');
                     }
                 } else {
                     // For other status changes, keep existing update endpoint
@@ -1153,20 +1160,12 @@
                         loadDashboard();
                     } else {
                         const data = await response.json().catch(() => ({}));
-                        if (typeof showNotification === 'function') {
-                            showNotification(data.error || 'Failed to update status', 'error');
-                        } else {
-                            alert(data.error || 'Failed to update status');
-                        }
+                        alert(data.error || 'Failed to update status');
                     }
                 }
             } catch (error) {
                 console.error('Failed to update status:', error);
-                if (typeof showNotification === 'function') {
-                    showNotification('Network error while updating status', 'error');
-                } else {
-                    alert('Network error while updating status');
-                }
+                alert('Network error while updating status');
             }
         }
 
@@ -1241,117 +1240,6 @@
         // Status filter
         document.getElementById('statusFilter').addEventListener('change', () => {
             loadRegistrations(1);
-        });
-
-        // Recent Registrations Widget logic
-        async function loadRecentRegistrations() {
-            try {
-                const params = new URLSearchParams({ page: 1, limit: 5, status: document.getElementById('dashboardStatusFilter').value || 'pending' });
-                const response = await fetch(`/api/admin/registrations?${params}`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
-                if (!response.ok) return;
-                const data = await response.json();
-                const search = (document.getElementById('dashboardSearch').value || '').toLowerCase();
-                const rows = data.registrations.filter(r => !search || `${r.firstName} ${r.lastName}`.toLowerCase().includes(search) || (r.email||'').toLowerCase().includes(search));
-                renderRecentTable(rows);
-                updatePendingBadge(data.registrations.filter(r => r.status==='pending').length, true);
-            } catch (e) { console.error('Failed to load recent registrations', e); }
-        }
-
-        function renderRecentTable(registrations) {
-            const tbody = document.querySelector('#recentRegistrationsTable tbody');
-            tbody.innerHTML = '';
-            registrations.forEach(reg => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><input type="checkbox" class="recent-select" data-id="${reg.id}" /></td>
-                    <td>${reg.firstName} ${reg.lastName}</td>
-                    <td>${reg.email}</td>
-                    <td>${reg.program}</td>
-                    <td><span class="status-badge status-${reg.status}">${reg.status}</span></td>
-                    <td>${new Date(reg.created_at).toLocaleDateString()}</td>
-                    <td>
-                        <button class="btn btn-success" data-action="approve" data-id="${reg.id}" style="padding: 0.25rem 0.5rem;">Approve</button>
-                        <button class="btn btn-danger" data-action="reject" data-id="${reg.id}" style="padding: 0.25rem 0.5rem;">Reject</button>
-                    </td>`;
-                tbody.appendChild(tr);
-            });
-            wireRecentActions();
-        }
-
-        function wireRecentActions() {
-            // Select all
-            const selectAll = document.getElementById('recentSelectAll');
-            if (selectAll) {
-                selectAll.onchange = () => {
-                    document.querySelectorAll('.recent-select').forEach(cb => cb.checked = selectAll.checked);
-                    updateBulkButtonsState();
-                };
-            }
-            // Row checkbox change
-            document.querySelectorAll('.recent-select').forEach(cb => cb.onchange = updateBulkButtonsState);
-            // Approve/Reject single
-            document.querySelectorAll('#recentRegistrationsTable [data-action]')
-                .forEach(btn => btn.onclick = async (e) => {
-                    const id = e.currentTarget.getAttribute('data-id');
-                    const action = e.currentTarget.getAttribute('data-action');
-                    if (action === 'approve') await updateStatus(id, 'approved');
-                    else await updateStatus(id, 'rejected');
-                    loadRecentRegistrations();
-                });
-            updateBulkButtonsState();
-        }
-
-        function getSelectedRecentIds() {
-            return Array.from(document.querySelectorAll('.recent-select:checked')).map(cb => cb.getAttribute('data-id'));
-        }
-
-        async function bulkUpdateRecent(action) {
-            const ids = getSelectedRecentIds();
-            for (const id of ids) {
-                await updateStatus(id, action);
-            }
-            loadRecentRegistrations();
-            loadRegistrations();
-            loadDashboard();
-        }
-
-        function updateBulkButtonsState() {
-            const any = getSelectedRecentIds().length > 0;
-            document.getElementById('dashboardApproveSelected').disabled = !any;
-            document.getElementById('dashboardRejectSelected').disabled = !any;
-        }
-
-        // Sidebar pending badge
-        function updatePendingBadge(count, showIfZero = false) {
-            const link = document.querySelector('.nav-link[data-section="registrations"]');
-            if (!link) return;
-            let badge = link.querySelector('.pending-badge');
-            if (!badge) {
-                badge = document.createElement('span');
-                badge.className = 'pending-badge';
-                badge.style.cssText = 'margin-left:auto;background:#f59e0b;color:#1f2937;border-radius:9999px;padding:2px 8px;font-size:12px;';
-                link.appendChild(badge);
-            }
-            badge.textContent = count;
-            badge.style.display = count || showIfZero ? 'inline-block' : 'none';
-        }
-
-        // Dashboard filters wiring
-        document.getElementById('dashboardStatusFilter').addEventListener('change', loadRecentRegistrations);
-        document.getElementById('dashboardSearch').addEventListener('input', Utils.debounce(loadRecentRegistrations, 300));
-        document.getElementById('dashboardViewAllBtn').addEventListener('click', () => {
-            document.querySelector('.nav-link[data-section="registrations"]').click();
-        });
-        document.getElementById('dashboardApproveSelected').addEventListener('click', () => bulkUpdateRecent('approved'));
-        document.getElementById('dashboardRejectSelected').addEventListener('click', () => bulkUpdateRecent('rejected'));
-        document.getElementById('dashboardRefreshBtn').addEventListener('click', () => {
-            loadDashboard();
-            const activeSection = document.querySelector('.content-section.active');
-            if (activeSection && activeSection.id === 'registrations') {
-                loadRegistrations();
-            }
         });
 
         // Student Reports Functions

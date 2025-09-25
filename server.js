@@ -959,22 +959,7 @@ app.get('/api/admin/stats', authenticateToken, (req, res) => {
                     }
 
                     stats.programDistribution = programStats;
-                    // Get total student reports
-                    db.get('SELECT COUNT(*) as count FROM student_reports', (err, reportsCount) => {
-                        if (err) {
-                            return res.status(500).json({ error: 'Database error' });
-                        }
-                        stats.totalReports = (reportsCount && reportsCount.count) || 0;
-
-                        // Recent 5 registrations (most recent first)
-                        db.all(`SELECT id, firstName, lastName, email, program, grade, status, created_at FROM registrations ORDER BY created_at DESC LIMIT 5`, (err, recent) => {
-                            if (err) {
-                                return res.status(500).json({ error: 'Database error' });
-                            }
-                            stats.recentRegistrations = recent || [];
-                            res.json(stats);
-                        });
-                    });
+                    res.json(stats);
                 });
             });
         });

@@ -58,9 +58,15 @@ async function sendApprovalEmail(studentEmail, firstName, lastName) {
     }
 }
 
-// Database path - in-memory for Vercel, file for local development
-const DB_PATH = process.env.VERCEL ? ':memory:' : './kiyumba_school.db';
+// Database path - prefer explicit DB_FILE env var for persistence. If not set,
+// use file DB locally and in-memory on Vercel (serverless) to avoid accidental
+// writes to ephemeral filesystems. To persist data in production, set DB_FILE
+// to a writable path on your host or use an external managed database.
+const DB_PATH = process.env.DB_FILE || (process.env.VERCEL ? ':memory:' : './kiyumba_school.db');
 console.log(`Using database at: ${DB_PATH}`);
+if (DB_PATH === ':memory:') {
+    console.warn('Warning: SQLite is running in-memory. Data will NOT persist across restarts. Set DB_FILE env var or use a managed DB for persistence.');
+}
 
 // Security middleware
 app.use(helmet({

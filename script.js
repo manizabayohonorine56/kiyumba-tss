@@ -1,3 +1,17 @@
+// Configurable API base + fetch helper with timeout
+const PUBLIC_API_BASE = localStorage.getItem('API_BASE') || '';
+function apiUrlPublic(path) { return `${PUBLIC_API_BASE}${path}`; }
+async function apiFetchPublic(path, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const resp = await fetch(apiUrlPublic(path), { ...options, signal: controller.signal });
+        return resp;
+    } finally {
+        clearTimeout(id);
+    }
+}
+
 // DOM Content Loaded
 document.addEventListener('DOMContentLoaded', function() {
     // Mobile Menu Toggle
@@ -110,7 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
             };
 
             try {
-                const response = await fetch('/api/contact', {
+                const response = await apiFetchPublic('/api/contact', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -152,7 +166,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             try {
-                const response = await fetch('/api/send-sms', {
+                const response = await apiFetchPublic('/api/send-sms', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -512,7 +526,7 @@ async function handleLogin(e) {
     
     try {
         // Try admin login first
-        const adminResponse = await fetch('/api/admin/login', {
+        const adminResponse = await apiFetchPublic('/api/admin/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

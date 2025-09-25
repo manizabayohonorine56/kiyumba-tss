@@ -558,9 +558,41 @@ app.post('/api/register', (req, res) => {
             return res.status(400).json({ error: 'Email already registered' });
         }
 
-        registrationQueue.push(job);
+        // Attempt immediate insert so the admin dashboard sees new registrations right away.
+        const stmt = db.prepare(`INSERT INTO registrations (
+            firstName, lastName, dateOfBirth, gender, email, phone, address,
+            program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`);
 
-        res.json({ message: 'Registration received', jobId: jobId, queuePosition: registrationQueue.length });
+        const paramsInsert = [firstName, lastName, dateOfBirth, gender, email, phone, address,
+            program, grade, parentName, parentPhone, previousSchool, medicalInfo, newsletter ? 1 : 0];
+
+        const insertStart = Date.now();
+        stmt.run(paramsInsert, function(err) {
+            const duration = Date.now() - insertStart;
+            const metric = {
+                jobId: jobId,
+                email: email,
+                durationMs: duration,
+                insertedAt: new Date().toISOString(),
+                error: err ? err.message : null,
+                registrationId: err ? null : this.lastID
+            };
+
+            insertMetrics.unshift(metric);
+            if (insertMetrics.length > MAX_METRICS) insertMetrics.pop();
+
+            try { stmt.finalize(); } catch (e) {}
+
+            if (err) {
+                console.error('Immediate registration insert error:', err);
+                // Fallback: enqueue for async processing so the submission isn't lost
+                registrationQueue.push(job);
+                return res.json({ message: 'Registration received and queued for processing', jobId: jobId, queuePosition: registrationQueue.length });
+            }
+
+            res.json({ message: 'Registration received', registrationId: this.lastID, insertDurationMs: duration });
+        });
     });
 });
 

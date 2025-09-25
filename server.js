@@ -225,8 +225,11 @@ app.get('/api/admin/queue', authenticateToken, (req, res) => {
 
 // SSE endpoint for admin dashboards to receive live events (must provide Bearer token)
 app.get('/events', (req, res) => {
+    // Support token via Authorization header or query param (for EventSource clients)
+    let token = null;
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    if (authHeader) token = authHeader.split(' ')[1];
+    if (!token && req.query && req.query.token) token = req.query.token;
     if (!token) return res.status(401).end('Unauthorized');
 
     jwt.verify(token, JWT_SECRET, (err, user) => {

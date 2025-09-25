@@ -868,6 +868,20 @@
                 loadDashboard();
                 // Auto refresh disabled per user request. To re-enable, call startAutoRefresh().
                 // startAutoRefresh();
+                // Connect SSE for real-time updates. Browsers don't allow headers for EventSource,
+                // so we pass the token as a query param (server still validates Bearer token if provided).
+                const safeToken = encodeURIComponent(authToken);
+                const es = new EventSource(`/events?token=${safeToken}`);
+                es.addEventListener('message', (evt) => {
+                    try {
+                        const payload = JSON.parse(evt.data);
+                        if (payload && payload.type === 'registration') {
+                            scheduleRegistrationsRefresh();
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse SSE message', e);
+                    }
+                });
             }
         });
 
@@ -1013,6 +1027,22 @@
             } finally {
                 _registrationsLoading = false;
             }
+        }
+
+        // Debounced refresh when SSE events arrive
+        let _sseRefreshTimer = null;
+        function scheduleRegistrationsRefresh() {
+            if (_sseRefreshTimer) clearTimeout(_sseRefreshTimer);
+            _sseRefreshTimer = setTimeout(() => {
+                const activeSection = document.querySelector('.content-section.active');
+                if (activeSection && activeSection.id === 'registrations') {
+                    loadRegistrations(1);
+                    loadDashboard();
+                } else {
+                    // If admin is not viewing registrations, still refresh counts
+                    loadDashboard();
+                }
+            }, 500); // 500ms debounce
         }
 
         function displayRegistrations(registrations) {

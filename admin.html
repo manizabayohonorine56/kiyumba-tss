@@ -892,6 +892,18 @@
 
     <script>
     let authToken = localStorage.getItem('adminToken');
+    // Allow pointing the frontend to a persistent external API base (e.g., Render/Railway)
+    // Set via: localStorage.setItem('API_BASE', 'https://your-backend.example.com');
+    const API_BASE = localStorage.getItem('API_BASE') || '';
+    function apiUrl(path) { return `${API_BASE}${path}`; }
+    function apiFetch(path, options = {}) {
+        const merged = Object.assign({}, options);
+        merged.headers = Object.assign({}, merged.headers);
+        if (authToken && !merged.headers['Authorization']) {
+            merged.headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        return fetch(apiUrl(path), merged);
+    }
     // Try to hydrate currentUser from localStorage so redirects from the landing page work
     let currentUser = localStorage.getItem('currentUser') ? JSON.parse(localStorage.getItem('currentUser')) : null;
 
@@ -905,7 +917,7 @@
                 // Connect SSE for real-time updates. Browsers don't allow headers for EventSource,
                 // so we pass the token as a query param (server still validates Bearer token if provided).
                 const safeToken = encodeURIComponent(authToken);
-                const es = new EventSource(`/events?token=${safeToken}`);
+                const es = new EventSource(apiUrl(`/events?token=${safeToken}`));
                 es.addEventListener('message', (evt) => {
                     try {
                         const payload = JSON.parse(evt.data);
@@ -928,7 +940,7 @@
             const password = document.getElementById('password').value;
 
             try {
-                const response = await fetch('/api/admin/login', {
+                const response = await apiFetch('/api/admin/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
@@ -1000,8 +1012,8 @@
         async function loadDashboard() {
             try {
                 const [statsRes, reportsCountRes] = await Promise.all([
-                    fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                    fetch('/api/admin/reports/count', { headers: { 'Authorization': `Bearer ${authToken}` } })
+                    apiFetch('/api/admin/stats'),
+                    apiFetch('/api/admin/reports/count')
                 ]);
 
                 if (statsRes.ok) {
@@ -1048,9 +1060,7 @@
             const limitParam = showAll ? 0 : 50; // 0 means return all
 
             try {
-                const response = await fetch(`/api/admin/registrations?page=${page}&status=${status}&limit=${limitParam}`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await apiFetch(`/api/admin/registrations?page=${page}&status=${status}&limit=${limitParam}`);
 
                 if (response.ok) {
                     const data = await response.json();
@@ -1106,11 +1116,9 @@
             try {
                 // When approving, use the dedicated endpoint that also sends an email
                 if (status === 'approved') {
-                    const response = await fetch(`/api/admin/approve-student/${id}`, {
+                    const response = await apiFetch(`/api/admin/approve-student/${id}`, {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${authToken}`
-                        }
+                        headers: {}
                     });
 
                     const data = await response.json();
@@ -1127,12 +1135,9 @@
                     }
                 } else {
                     // For other status changes, keep existing update endpoint
-                    const response = await fetch(`/api/admin/registrations/${id}`, {
+                    const response = await apiFetch(`/api/admin/registrations/${id}`, {
                         method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${authToken}`,
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ status })
                     });
 
@@ -1152,9 +1157,7 @@
 
         async function loadMessages() {
             try {
-                const response = await fetch('/api/admin/messages', {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await apiFetch('/api/admin/messages');
 
                 if (response.ok) {
                     const data = await response.json();
@@ -1187,12 +1190,9 @@
 
         async function markAsRead(id) {
             try {
-                const response = await fetch(`/api/admin/messages/${id}`, {
+                const response = await apiFetch(`/api/admin/messages/${id}`, {
                     method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'read' })
                 });
 
@@ -1234,9 +1234,7 @@
             });
 
             try {
-                const response = await fetch(`/api/admin/reports?${params}`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await apiFetch(`/api/admin/reports?${params}`);
 
                 if (response.ok) {
                     const data = await response.json();
@@ -1315,9 +1313,7 @@
             });
 
             try {
-                const response = await fetch(`/api/admin/reports?${params}`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await apiFetch(`/api/admin/reports?${params}`);
 
                 if (response.ok) {
                     const blob = await response.blob();
@@ -1478,10 +1474,7 @@
 
         async function createBackup() {
             try {
-                const response = await fetch('/api/admin/backup', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await apiFetch('/api/admin/backup', { method: 'POST' });
 
                 if (response.ok) {
                     const blob = await response.blob();
@@ -1504,10 +1497,7 @@
 
         async function exportData() {
             try {
-                const response = await fetch('/api/admin/export', {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await apiFetch('/api/admin/export', { method: 'GET' });
 
                 if (response.ok) {
                     const blob = await response.blob();

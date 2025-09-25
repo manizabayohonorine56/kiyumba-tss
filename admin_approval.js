@@ -36,8 +36,10 @@ async function approveStudent(studentId) {
 }
 
 // Function to display registrations with approve button
-function displayRegistrations(registrations) {
+function renderRegistrationCards(registrations) {
+    // Render as cards only if the registrationsContent container exists.
     const container = document.getElementById('registrationsContent');
+    if (!container) return;
     container.innerHTML = registrations.map(reg => `
         <div class="registration-card ${reg.status}">
             <div class="registration-header">
@@ -63,4 +65,10 @@ function displayRegistrations(registrations) {
             </div>
         </div>
     `).join('');
+}
+
+// Backwards-compatible alias: if other code calls displayRegistrations and
+// the table-based renderer does not exist, use the card renderer.
+if (typeof window !== 'undefined' && !window.displayRegistrations) {
+    window.displayRegistrations = renderRegistrationCards;
 }

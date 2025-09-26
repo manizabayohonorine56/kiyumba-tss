@@ -1,5 +1,6 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
@@ -74,15 +75,101 @@ async function sendApprovalEmail(studentEmail, firstName, lastName) {
     }
 }
 
-// Database path - prefer explicit DB_FILE env var for persistence. If not set,
-// use file DB locally and in-memory on Vercel (serverless) to avoid accidental
-// writes to ephemeral filesystems. To persist data in production, set DB_FILE
-// to a writable path on your host or use an external managed database.
-const DB_PATH = process.env.DB_FILE || (process.env.VERCEL ? ':memory:' : './kiyumba_school.db');
-console.log(`Using database at: ${DB_PATH}`);
-if (DB_PATH === ':memory:') {
-    console.warn('Warning: SQLite is running in-memory. Data will NOT persist across restarts. Set DB_FILE env var or use a managed DB for persistence.');
+// Database adapter for SQLite/Postgres compatibility
+class DatabaseAdapter {
+    constructor() {
+        this.isPostgres = !!process.env.DATABASE_URL;
+        if (this.isPostgres) {
+            this.pool = new Pool({ connectionString: process.env.DATABASE_URL });
+            console.log('Using Postgres database');
+        } else {
+            const DB_PATH = process.env.DB_FILE || './kiyumba_school.db';
+            this.db = new sqlite3.Database(DB_PATH);
+            console.log(`Using SQLite database at: ${DB_PATH}`);
+        }
+    }
+
+    async query(sql, params = []) {
+        if (this.isPostgres) {
+            // Convert SQLite placeholders (?) to Postgres ($1, $2, ...)
+            let pgSql = sql;
+            let paramIndex = 1;
+            pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
+            
+            // Convert SQLite-specific syntax to Postgres
+            pgSql = pgSql.replace(/AUTOINCREMENT/g, 'SERIAL');
+            pgSql = pgSql.replace(/INTEGER PRIMARY KEY/g, 'SERIAL PRIMARY KEY');
+            pgSql = pgSql.replace(/datetime\('now'\)/g, 'NOW()');
+            pgSql = pgSql.replace(/CURRENT_TIMESTAMP/g, 'NOW()');
+            
+            const result = await this.pool.query(pgSql, params);
+            return { rows: result.rows, changes: result.rowCount, lastID: result.rows[0]?.id };
+        } else {
+            return new Promise((resolve, reject) => {
+                this.db.all(sql, params, (err, rows) => {
+                    if (err) reject(err);
+                    else resolve({ rows: rows || [], changes: 0, lastID: null });
+                });
+            });
+        }
+    }
+
+    async run(sql, params = []) {
+        if (this.isPostgres) {
+            let pgSql = sql;
+            let paramIndex = 1;
+            pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
+            
+            pgSql = pgSql.replace(/AUTOINCREMENT/g, 'SERIAL');
+            pgSql = pgSql.replace(/INTEGER PRIMARY KEY/g, 'SERIAL PRIMARY KEY');
+            pgSql = pgSql.replace(/datetime\('now'\)/g, 'NOW()');
+            pgSql = pgSql.replace(/CURRENT_TIMESTAMP/g, 'NOW()');
+            
+            const result = await this.pool.query(pgSql, params);
+            return { changes: result.rowCount, lastID: result.rows[0]?.id };
+        } else {
+            return new Promise((resolve, reject) => {
+                this.db.run(sql, params, function(err) {
+                    if (err) reject(err);
+                    else resolve({ changes: this.changes, lastID: this.lastID });
+                });
+            });
+        }
+    }
+
+    async get(sql, params = []) {
+        if (this.isPostgres) {
+            let pgSql = sql;
+            let paramIndex = 1;
+            pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
+            
+            pgSql = pgSql.replace(/datetime\('now'\)/g, 'NOW()');
+            pgSql = pgSql.replace(/CURRENT_TIMESTAMP/g, 'NOW()');
+            
+            const result = await this.pool.query(pgSql, params);
+            return result.rows[0] || null;
+        } else {
+            return new Promise((resolve, reject) => {
+                this.db.get(sql, params, (err, row) => {
+                    if (err) reject(err);
+                    else resolve(row || null);
+                });
+            });
+        }
+    }
+
+    async close() {
+        if (this.isPostgres) {
+            await this.pool.end();
+        } else {
+            return new Promise((resolve) => {
+                this.db.close(resolve);
+            });
+        }
+    }
 }
+
+const db = new DatabaseAdapter();
 
 // Security middleware
 app.use(helmet({
@@ -122,117 +209,119 @@ const upload = multer({
 });
 
 // Database connection
-const db = new sqlite3.Database(DB_PATH, (err) => {
-    if (err) {
-        console.error('Error opening database:', err);
-    } else {
-        console.log('Connected to SQLite database');
-        // Only use WAL in development; in Vercel we use in-memory DB
-        if (!process.env.VERCEL) {
-            db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;", (pragmaErr) => {
-                if (pragmaErr) {
-                    console.error('Failed to set PRAGMA:', pragmaErr);
-                } else {
-                    console.log('SQLite PRAGMA set: journal_mode=WAL, synchronous=NORMAL');
-                }
-                initializeDatabase();
-            });
-        } else {
+if (!db.isPostgres) {
+    // Only use WAL in development for SQLite
+    if (!process.env.VERCEL) {
+        db.db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;", (pragmaErr) => {
+            if (pragmaErr) {
+                console.error('Failed to set PRAGMA:', pragmaErr);
+            } else {
+                console.log('SQLite PRAGMA set: journal_mode=WAL, synchronous=NORMAL');
+            }
             initializeDatabase();
-        }
+        });
+    } else {
+        initializeDatabase();
     }
-});
+} else {
+    initializeDatabase();
+}
 
 // Initialize database tables
-function initializeDatabase() {
-    // Users table (for admin authentication)
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT DEFAULT 'admin',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+async function initializeDatabase() {
+    try {
+        // Users table (for admin authentication)
+        await db.run(`CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'admin',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
 
-    // Registrations table
-    db.run(`CREATE TABLE IF NOT EXISTS registrations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firstName TEXT NOT NULL,
-        lastName TEXT NOT NULL,
-        dateOfBirth DATE NOT NULL,
-        gender TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        phone TEXT NOT NULL,
-        address TEXT NOT NULL,
-        program TEXT NOT NULL,
-        grade TEXT NOT NULL,
-        parentName TEXT,
-        parentPhone TEXT,
-        previousSchool TEXT,
-        medicalInfo TEXT,
-        newsletter BOOLEAN DEFAULT 0,
-        status TEXT DEFAULT 'pending',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+        // Registrations table
+        await db.run(`CREATE TABLE IF NOT EXISTS registrations (
+            id SERIAL PRIMARY KEY,
+            firstName TEXT NOT NULL,
+            lastName TEXT NOT NULL,
+            dateOfBirth DATE NOT NULL,
+            gender TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            phone TEXT NOT NULL,
+            address TEXT NOT NULL,
+            program TEXT NOT NULL,
+            grade TEXT NOT NULL,
+            parentName TEXT,
+            parentPhone TEXT,
+            previousSchool TEXT,
+            medicalInfo TEXT,
+            newsletter BOOLEAN DEFAULT false,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`);
 
-    // Contact messages table
-    db.run(`CREATE TABLE IF NOT EXISTS contact_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL,
-        phone TEXT,
-        message TEXT NOT NULL,
-        status TEXT DEFAULT 'unread',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+        // Contact messages table
+        await db.run(`CREATE TABLE IF NOT EXISTS contact_messages (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            phone TEXT,
+            message TEXT NOT NULL,
+            status TEXT DEFAULT 'unread',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
 
-    // SMS messages table
-    db.run(`CREATE TABLE IF NOT EXISTS sms_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        phone TEXT NOT NULL,
-        message TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+        // SMS messages table
+        await db.run(`CREATE TABLE IF NOT EXISTS sms_messages (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            message TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
 
-    // Student Reports table
-    db.run(`CREATE TABLE IF NOT EXISTS student_reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id INTEGER NOT NULL,
-        report_type TEXT NOT NULL,
-        term TEXT NOT NULL,
-        year INTEGER NOT NULL,
-        file_path TEXT NOT NULL,
-        uploaded_by TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (student_id) REFERENCES registrations(id)
-    )`);
+        // Student Reports table
+        await db.run(`CREATE TABLE IF NOT EXISTS student_reports (
+            id SERIAL PRIMARY KEY,
+            student_id INTEGER NOT NULL,
+            report_type TEXT NOT NULL,
+            term TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            file_path TEXT NOT NULL,
+            uploaded_by TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW(),
+            FOREIGN KEY (student_id) REFERENCES registrations(id)
+        )`);
 
-    // Approved Files table
-    db.run(`CREATE TABLE IF NOT EXISTS approved_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        file_name TEXT NOT NULL,
-        file_path TEXT NOT NULL,
-        file_type TEXT NOT NULL,
-        approved_by TEXT NOT NULL,
-        approval_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-        status TEXT DEFAULT 'active'
-    )`);
+        // Approved Files table
+        await db.run(`CREATE TABLE IF NOT EXISTS approved_files (
+            id SERIAL PRIMARY KEY,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            approved_by TEXT NOT NULL,
+            approval_date TIMESTAMP DEFAULT NOW(),
+            status TEXT DEFAULT 'active'
+        )`);
 
-    // Website settings table
-    db.run(`CREATE TABLE IF NOT EXISTS website_settings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        setting_key TEXT UNIQUE NOT NULL,
-        setting_value TEXT NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+        // Website settings table
+        await db.run(`CREATE TABLE IF NOT EXISTS website_settings (
+            id SERIAL PRIMARY KEY,
+            setting_key TEXT UNIQUE NOT NULL,
+            setting_value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`);
 
-    // Create default admin user
-    createDefaultAdmin();
+        // Create default admin user
+        await createDefaultAdmin();
+        console.log('Database initialized successfully');
+    } catch (error) {
+        console.error('Database initialization error:', error);
+    }
 }
 
 // Start background worker after DB initialization
@@ -342,8 +431,12 @@ app.get('/api/admin/reports/count', authenticateToken, (req, res) => {
     });
 });
 
-// Upload student report (multipart/form-data)
+// Upload student report (multipart/form-data) - disabled on Vercel
 app.post('/api/admin/upload-report', authenticateToken, upload.single('report'), (req, res) => {
+    if (process.env.VERCEL) {
+        return res.status(400).json({ error: 'File uploads disabled on Vercel. Use a persistent backend for file uploads.' });
+    }
+    
     const { student_id, term, year, type } = req.body;
     const reportFile = req.file;
 
@@ -355,17 +448,17 @@ app.post('/api/admin/upload-report', authenticateToken, upload.single('report'),
 
     db.run(`INSERT INTO student_reports (student_id, term, year, report_type, file_path, uploaded_by) 
             VALUES (?, ?, ?, ?, ?, ?)`,
-        [student_id, term, year, type, relativePath, req.user.email],
-        function(err) {
-            if (err) {
-                console.error('Error saving report record:', err);
-                return res.status(500).json({ error: 'Error saving report' });
-            }
+        [student_id, term, year, type, relativePath, req.user.email])
+        .then(result => {
             res.json({ 
                 message: 'Report uploaded successfully',
-                id: this.lastID,
+                id: result.lastID,
                 path: relativePath
             });
+        })
+        .catch(err => {
+            console.error('Error saving report record:', err);
+            res.status(500).json({ error: 'Error saving report' });
         });
 });
 
@@ -486,25 +579,21 @@ function startQueueWorker() {
 }
 
 // Create default admin user
-function createDefaultAdmin() {
+async function createDefaultAdmin() {
     const defaultPassword = 'admin123';
-    bcrypt.hash(defaultPassword, 10, (err, hash) => {
-        if (err) {
-            console.error('Error hashing password:', err);
-            return;
-        }
+    try {
+        const hash = await bcrypt.hash(defaultPassword, 10);
         
-        db.run(`INSERT OR IGNORE INTO users (username, email, password, role) 
+        const result = await db.run(`INSERT OR IGNORE INTO users (username, email, password, role) 
                 VALUES (?, ?, ?, ?)`, 
-                ['admin', 'admin@kiyumbaschool.edu', hash, 'admin'], 
-                function(err) {
-                    if (err) {
-                        console.error('Error creating admin user:', err);
-                    } else if (this.changes > 0) {
-                        console.log('Default admin user created: admin@kiyumbaschool.edu / admin123');
-                    }
-                });
-    });
+                ['admin', 'admin@kiyumbaschool.edu', hash, 'admin']);
+        
+        if (result.changes > 0) {
+            console.log('Default admin user created: admin@kiyumbaschool.edu / admin123');
+        }
+    } catch (error) {
+        console.error('Error creating admin user:', error);
+    }
 }
 
 // Authentication middleware
@@ -539,49 +628,46 @@ app.get('/admin', (req, res) => {
 // API Routes
 
 // Admin login
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
         return res.status(400).json({ error: 'Email and password required' });
     }
 
-    db.get('SELECT * FROM users WHERE email = ?', [email], (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: 'Database error' });
-        }
-
+    try {
+        const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+        
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        bcrypt.compare(password, user.password, (err, result) => {
-            if (err) {
-                return res.status(500).json({ error: 'Authentication error' });
+        const isValid = await bcrypt.compare(password, user.password);
+        
+        if (!isValid) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.json({
+            message: 'Login successful',
+            token,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role
             }
-
-            if (!result) {
-                return res.status(401).json({ error: 'Invalid credentials' });
-            }
-
-            const token = jwt.sign(
-                { id: user.id, email: user.email, role: user.role },
-                JWT_SECRET,
-                { expiresIn: '24h' }
-            );
-
-            res.json({
-                message: 'Login successful',
-                token,
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    role: user.role
-                }
-            });
         });
-    });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
 });
 
 // Student registration
@@ -1177,14 +1263,13 @@ app.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('\nShutting down server...');
-    db.close((err) => {
-        if (err) {
-            console.error('Error closing database:', err);
-        } else {
-            console.log('Database connection closed.');
-        }
-        process.exit(0);
-    });
+    try {
+        await db.close();
+        console.log('Database connection closed.');
+    } catch (error) {
+        console.error('Error closing database:', error);
+    }
+    process.exit(0);
 });
